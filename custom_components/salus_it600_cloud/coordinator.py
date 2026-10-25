@@ -29,7 +29,6 @@ from .const import (
     DEFAULT_SHADOW_INDEX,
     DOMAIN,
     GATEWAY_SHADOW_INDEX,
-    HOLD_TYPE_MANUAL,
     METADATA_REFRESH_SECONDS,
     PENDING_TIMEOUT_SECONDS,
     PUSH_SCAN_INTERVAL_SECONDS,
@@ -37,6 +36,7 @@ from .const import (
     STALE_AFTER_SECONDS,
 )
 from .devices import is_climate_device
+from .heating import SYSTEM_MODE_HEAT, ThermostatCommand, centi_celsius_from_degrees, hold_raw_for_preset
 from .mqtt import SalusMqttConnection
 from .state import DeviceStateStore, extract_reported
 
@@ -212,16 +212,16 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
                 for other in self.data.values()
                 if other.get("_gateway_id") == device.get("_gateway_id") and is_climate_device(other)
             ]
-        await self._async_send(targets, {"ep9:sIT600TH:SetHoldType": hold_type})
+        await self._async_send(targets, {ThermostatCommand.HOLD: hold_type})
 
     async def async_set_temperature(self, device_id: str, temperature: float) -> None:
         """Set target temperature of a thermostat (switches it to manual hold)."""
         await self._async_send(
             [self._require_device(device_id)],
             {
-                "ep9:sIT600TH:SetHeatingSetpoint_x100": round(temperature * 100),
-                "ep9:sIT600TH:SetHoldType": HOLD_TYPE_MANUAL,
-                "ep9:sIT600TH:SetSystemMode": 4,
+                ThermostatCommand.SETPOINT: centi_celsius_from_degrees(temperature),
+                ThermostatCommand.HOLD: hold_raw_for_preset("manual"),
+                ThermostatCommand.SYSTEM_MODE: SYSTEM_MODE_HEAT,
             },
         )
 

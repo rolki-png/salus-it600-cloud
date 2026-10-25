@@ -5,12 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-# Commands are sent as "Set*" desired properties, devices report the result under these property names
+from .heating import desired_to_reported_thermostat
+
+# Commands are sent as "Set*" desired properties, devices report the result under these property names.
+# Thermostat pairs come from heating so the overlay cannot drift from observe().
 DESIRED_TO_REPORTED = {
-    "ep9:sIT600TH:SetHoldType": "ep9:sIT600TH:HoldType",
-    "ep9:sIT600TH:SetHeatingSetpoint_x100": "ep9:sIT600TH:HeatingSetpoint_x100",
-    "ep9:sIT600TH:SetSystemMode": "ep9:sIT600TH:SystemMode",
     "ep9:sOnOffS:SetOnOff": "ep9:sOnOffS:OnOff",
+    **desired_to_reported_thermostat(),
 }
 
 
