@@ -13,9 +13,9 @@ WIRE_LITERAL = re.compile(r"ep_?\d+:")
 
 def test_shadow_property_names_are_spelt_only_in_wire_py() -> None:
     offences = [
-        f"{path.name}:{node.lineno} {node.value!r}"
-        for path in sorted(PACKAGE.glob("*.py"))
-        if path.name != "wire.py"
+        f"{path.relative_to(PACKAGE)}:{node.lineno} {node.value!r}"
+        for path in sorted(PACKAGE.rglob("*.py"))
+        if path != PACKAGE / "wire.py"
         for node in ast.walk(ast.parse(path.read_text()))
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and WIRE_LITERAL.search(node.value)
     ]

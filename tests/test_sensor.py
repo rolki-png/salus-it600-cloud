@@ -101,3 +101,12 @@ async def test_climate_device_skips_the_legacy_temperature_sensor() -> None:
     assert _uid(fixtures.THERMOSTAT_ID, "temperature") not in entities
     assert _uid(fixtures.THERMOSTAT_ID, "local_temperature") in entities
     assert entities[_uid("hall", "temperature")].native_value == 19.5
+
+
+def test_listing_readings_in_hundredths_read_as_degrees_and_percent() -> None:
+    temperature = ("temperature", "current_temperature", "LocalTemperature")
+    assert sensor._value({"temperature": 2150}, temperature, True) == 21.5
+    assert sensor._value({"status": {"LocalTemperature": 2150}}, temperature, True) == 21.5
+    assert sensor._value({"temperature": 21.5}, temperature, True) == 21.5
+    assert sensor._value({"humidity": 4500}, ("humidity",), True) == 45.0
+    assert sensor._value({"battery": 100}, ("battery",), False) == 100.0

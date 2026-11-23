@@ -68,20 +68,29 @@ class DeciVolt:
         return self.tenths / 10
 
 
+class HoldCell(Enum):
+    UNREPORTED = "unreported"
+    UNREADABLE = "unreadable"
+
+    @property
+    def is_standby(self) -> bool:
+        return False
+
+
 @dataclass(frozen=True)
-class Hold:
-    raw: int | None
-    present: bool
+class HoldReported:
+    raw: int
 
     def __post_init__(self) -> None:
-        if self.raw is not None and not self.present:
-            raise ValueError("hold raw requires the key to be present")
-        if self.raw is not None and type(self.raw) is not int:
-            raise ValueError("hold raw must be an int")
+        if type(self.raw) is not int:
+            raise TypeError("hold raw must be an int")
 
     @property
     def is_standby(self) -> bool:
         return self.raw == _PRESET_RAW["away"]
+
+
+Hold = HoldCell | HoldReported
 
 
 @dataclass(frozen=True)
@@ -112,17 +121,19 @@ class ThermostatObservation:
         for sample in (self.local_temperature, self.heating_setpoint):
             if sample is not None and type(sample) is not CentiCelsius:
                 raise TypeError("temperatures must be CentiCelsius")
-        if type(self.hold) is not Hold or type(self.system_mode) is not SystemMode:
+        if type(self.hold) not in (HoldCell, HoldReported) or type(self.system_mode) is not SystemMode:
             raise TypeError("hold and system_mode must be their domain types")
         if self.battery is not None and type(self.battery) is not DeciVolt:
             raise TypeError("battery must be DeciVolt")
 
     def hold_label(self) -> str | None:
-        if not self.hold.present:
-            return None
-        if self.hold.raw is None:
-            return "Unknown"
-        return _HOLD_LABELS.get(self.hold.raw, f"Unknown ({self.hold.raw})")
+        match self.hold:
+            case HoldCell.UNREPORTED:
+                return None
+            case HoldCell.UNREADABLE:
+                return "Unknown"
+            case HoldReported(raw):
+                return _HOLD_LABELS.get(raw, f"Unknown ({raw})")
 
     def system_mode_label(self) -> str | None:
         if self.system_mode.raw is None:
@@ -130,12 +141,13 @@ class ThermostatObservation:
         return _SYSTEM_LABELS.get(self.system_mode.raw, f"Unknown ({self.system_mode.raw})")
 
     def preset_slug(self) -> str | None:
-        if not self.hold.present:
-            return None
-        for slug, raw in _PRESET_RAW.items():
-            if self.hold.raw == raw:
-                return slug
-        return "manual"
+        match self.hold:
+            case HoldCell.UNREPORTED:
+                return None
+            case HoldCell.UNREADABLE:
+                return "manual"
+            case HoldReported(raw):
+                return next((slug for slug, preset in _PRESET_RAW.items() if preset == raw), "manual")
 
 
 @dataclass(frozen=True)
@@ -285,7 +297,7 @@ def _optional_int(present: bool, value: Any) -> int | None:
 
 def _hold(present: bool, value: Any) -> Hold:
     if not present:
-        return Hold(raw=None, present=False)
+        return HoldCell.UNREPORTED
     if type(value) is int:
-        return Hold(raw=value, present=True)
-    return Hold(raw=None, present=True)
+        return HoldReported(value)
+    return HoldCell.UNREADABLE
