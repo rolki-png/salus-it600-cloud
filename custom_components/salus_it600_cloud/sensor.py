@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -12,6 +13,7 @@ from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .api import DeviceListing
 from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
 from .entity import SalusEntity
@@ -26,33 +28,35 @@ async def async_setup_entry(
     coordinator: SalusCloudCoordinator = entry.runtime_data
     entities: list[SensorEntity] = []
     for device_id, device in coordinator.data.items():
-        if is_climate_device(device):
+        if is_climate_device(device.listing):
             for metric in TEMPERATURE_METRICS:
                 entities.append(SalusHeatingTemperature(coordinator, device_id, device, metric))
             continue
-        if _has_temperature(device):
+        if _has_temperature(device.listing):
             entities.append(SalusCloudTemperatureSensor(coordinator, device_id, device))
-        if _has_humidity(device):
+        if _has_humidity(device.listing):
             entities.append(SalusCloudHumiditySensor(coordinator, device_id, device))
-        if _has_battery(device):
+        if _has_battery(device.listing):
             entities.append(SalusCloudBatterySensor(coordinator, device_id, device))
     async_add_entities(entities)
 
 
-def _has_temperature(device: dict[str, Any]) -> bool:
-    device_type = device["type"].lower()
-    return device_type == "temperature_sensor" or (device_type == "sensor" and "temperature" in device)
+def _has_temperature(device: DeviceListing) -> bool:
+    device_type = device.type.lower()
+    return device_type == "temperature_sensor" or (device_type == "sensor" and "temperature" in device.fields)
 
 
-def _has_humidity(device: dict[str, Any]) -> bool:
-    return "humidity" in device or ("status" in device and "humidity" in device["status"])
+def _has_humidity(device: DeviceListing) -> bool:
+    fields = device.fields
+    return "humidity" in fields or ("status" in fields and "humidity" in fields["status"])
 
 
-def _has_battery(device: dict[str, Any]) -> bool:
-    return "battery" in device or "battery_level" in device or ("status" in device and "battery" in device["status"])
+def _has_battery(device: DeviceListing) -> bool:
+    fields = device.fields
+    return "battery" in fields or "battery_level" in fields or ("status" in fields and "battery" in fields["status"])
 
 
-def _value(data: dict[str, Any], fields: tuple[str, ...], scale_above_100: bool) -> float | None:
+def _value(data: Mapping[str, Any], fields: tuple[str, ...], scale_above_100: bool) -> float | None:
     for source in (data, data.get("status") if isinstance(data.get("status"), dict) else {}):
         for field in fields:
             if field in source:
@@ -107,7 +111,7 @@ class SalusCloudTemperatureSensor(SalusCloudSensor):
 
     @property
     def native_value(self) -> float | None:
-        return _value(self.device_data, ("temperature", "current_temperature", "LocalTemperature"), True)
+        return _value(self.listing_fields, ("temperature", "current_temperature", "LocalTemperature"), True)
 
 
 class SalusCloudHumiditySensor(SalusCloudSensor):
@@ -120,7 +124,7 @@ class SalusCloudHumiditySensor(SalusCloudSensor):
 
     @property
     def native_value(self) -> float | None:
-        return _value(self.device_data, ("humidity", "current_humidity"), True)
+        return _value(self.listing_fields, ("humidity", "current_humidity"), True)
 
 
 class SalusCloudBatterySensor(SalusCloudSensor):
@@ -133,4 +137,4 @@ class SalusCloudBatterySensor(SalusCloudSensor):
 
     @property
     def native_value(self) -> float | None:
-        return _value(self.device_data, ("battery", "battery_level", "battery_percentage"), False)
+        return _value(self.listing_fields, ("battery", "battery_level", "battery_percentage"), False)

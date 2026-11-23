@@ -1,3 +1,4 @@
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -5,6 +6,7 @@ from homeassistant.const import UnitOfTemperature
 
 from custom_components.salus_it600_cloud import sensor
 from custom_components.salus_it600_cloud.api import parse_gateway_items
+from custom_components.salus_it600_cloud.coordinator import SalusDevice
 from custom_components.salus_it600_cloud.heating import TEMPERATURE_METRICS
 from custom_components.salus_it600_cloud.sensor import SalusHeatingTemperature
 
@@ -80,11 +82,15 @@ async def test_set_temperature_shows_on_the_setpoint_sensor() -> None:
 
 async def test_climate_device_skips_the_legacy_temperature_sensor() -> None:
     coordinator, _, _ = await create_coordinator()
-    coordinator.data[fixtures.THERMOSTAT_ID]["temperature"] = 2200
-    (hall,), _ = parse_gateway_items(
-        fixtures.GATEWAY_ID, [{"id": "hall", "type": "temperature_sensor", "name": "Hall", "temperature": 19.5}]
+    thermostat = coordinator.data[fixtures.THERMOSTAT_ID]
+    coordinator.data[fixtures.THERMOSTAT_ID] = replace(
+        thermostat, listing=replace(thermostat.listing, fields={**thermostat.listing.fields, "temperature": 2200})
     )
-    coordinator.data["hall"] = {**hall, "_fresh": True}
+    (hall,), _ = parse_gateway_items(
+        fixtures.GATEWAY_ID,
+        [{"id": "hall", "device_code": "hall-code", "type": "temperature_sensor", "name": "Hall", "temperature": 19.5}],
+    )
+    coordinator.data["hall"] = SalusDevice(listing=hall, properties={}, shadow_index=None, fresh=True)
     entry = MagicMock()
     entry.runtime_data = coordinator
     add_entities = MagicMock()

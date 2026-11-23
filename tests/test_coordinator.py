@@ -27,11 +27,11 @@ async def test_refresh_combines_device_list_with_reported_states() -> None:
         fixtures.GATEWAY_ID,
     ]
     thermostat = coordinator.data[fixtures.THERMOSTAT_ID]
-    assert thermostat["_shadow_properties"][HOLD] == 0
-    assert thermostat["_shadow_properties"][TEMPERATURE] == 2200
-    assert thermostat["_shadow_device_index"] == "11"
-    assert thermostat["_fresh"] is True
-    assert coordinator.data[fixtures.GATEWAY_ID]["_fresh"] is False
+    assert thermostat.properties[HOLD] == 0
+    assert thermostat.properties[TEMPERATURE] == 2200
+    assert thermostat.shadow_index == "11"
+    assert thermostat.fresh is True
+    assert coordinator.data[fixtures.GATEWAY_ID].fresh is False
 
 
 async def test_connection_uses_gateway_client_id_and_all_devices() -> None:
@@ -69,10 +69,10 @@ async def test_device_missing_in_poll_keeps_last_known_state() -> None:
 
     data = await coordinator._async_update_data()
 
-    assert data[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 0
-    assert data[fixtures.THERMOSTAT_ID]["_shadow_properties"][TEMPERATURE] == 2200
-    assert data[fixtures.THERMOSTAT_ID]["_fresh"] is True
-    assert data[fixtures.RELAY_ID]["_shadow_properties"]["ep9:sOnOffS:OnOff"] == 1
+    assert data[fixtures.THERMOSTAT_ID].properties[HOLD] == 0
+    assert data[fixtures.THERMOSTAT_ID].properties[TEMPERATURE] == 2200
+    assert data[fixtures.THERMOSTAT_ID].fresh is True
+    assert data[fixtures.RELAY_ID].properties["ep9:sOnOffS:OnOff"] == 1
 
 
 async def test_failed_poll_keeps_recent_states() -> None:
@@ -83,8 +83,8 @@ async def test_failed_poll_keeps_recent_states() -> None:
 
     data = await coordinator._async_update_data()
 
-    assert data[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 0
-    assert data[fixtures.THERMOSTAT_ID]["_fresh"] is True
+    assert data[fixtures.THERMOSTAT_ID].properties[HOLD] == 0
+    assert data[fixtures.THERMOSTAT_ID].fresh is True
 
 
 async def test_poll_failing_for_ten_minutes_fails_update() -> None:
@@ -106,7 +106,7 @@ async def test_failed_device_list_refresh_uses_previous_list() -> None:
 
     data = await coordinator._async_update_data()
 
-    assert data[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 2
+    assert data[fixtures.THERMOSTAT_ID].properties[HOLD] == 2
 
 
 async def test_rejected_credentials_start_reauthentication() -> None:
@@ -125,8 +125,8 @@ async def test_mode_change_without_sync_targets_selected_thermostat() -> None:
         await coordinator.async_set_hold_type(fixtures.THERMOSTAT_ID, 7)
 
     assert connection.published == [(fixtures.THERMOSTAT_CODE, "11", {"ep9:sIT600TH:SetHoldType": 7})]
-    assert coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 7
-    assert coordinator.data[fixtures.THERMOSTAT_2_ID]["_shadow_properties"][HOLD] == 0
+    assert coordinator.data[fixtures.THERMOSTAT_ID].properties[HOLD] == 7
+    assert coordinator.data[fixtures.THERMOSTAT_2_ID].properties[HOLD] == 0
 
 
 async def test_mode_change_with_sync_targets_all_thermostats_of_gateway() -> None:
@@ -139,8 +139,8 @@ async def test_mode_change_with_sync_targets_all_thermostats_of_gateway() -> Non
         (fixtures.THERMOSTAT_2_CODE, "11", {"ep9:sIT600TH:SetHoldType": 7}),
         (fixtures.THERMOSTAT_CODE, "11", {"ep9:sIT600TH:SetHoldType": 7}),
     ]
-    assert coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 7
-    assert coordinator.data[fixtures.THERMOSTAT_2_ID]["_shadow_properties"][HOLD] == 7
+    assert coordinator.data[fixtures.THERMOSTAT_ID].properties[HOLD] == 7
+    assert coordinator.data[fixtures.THERMOSTAT_2_ID].properties[HOLD] == 7
 
 
 async def test_temperature_change_is_not_synchronized() -> None:
@@ -160,7 +160,7 @@ async def test_temperature_change_is_not_synchronized() -> None:
             },
         )
     ]
-    assert coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"]["ep9:sIT600TH:HeatingSetpoint_x100"] == 2250
+    assert coordinator.data[fixtures.THERMOSTAT_ID].properties["ep9:sIT600TH:HeatingSetpoint_x100"] == 2250
 
 
 async def test_partially_failed_sync_reports_failed_thermostat() -> None:
@@ -170,8 +170,8 @@ async def test_partially_failed_sync_reports_failed_thermostat() -> None:
     with patch(CALL_LATER), pytest.raises(HomeAssistantError, match="Termostat koupelna"):
         await coordinator.async_set_hold_type(fixtures.THERMOSTAT_ID, 7)
 
-    assert coordinator.data[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 7
-    assert coordinator.data[fixtures.THERMOSTAT_2_ID]["_shadow_properties"][HOLD] == 0
+    assert coordinator.data[fixtures.THERMOSTAT_ID].properties[HOLD] == 7
+    assert coordinator.data[fixtures.THERMOSTAT_2_ID].properties[HOLD] == 0
 
 
 async def test_poll_before_device_applies_command_does_not_revert_state() -> None:
@@ -183,7 +183,7 @@ async def test_poll_before_device_applies_command_does_not_revert_state() -> Non
 
     data = await coordinator._async_update_data()
 
-    assert data[fixtures.THERMOSTAT_ID]["_shadow_properties"][HOLD] == 7
+    assert data[fixtures.THERMOSTAT_ID].properties[HOLD] == 7
 
 
 async def test_command_schedules_confirmation_refresh_only_without_push() -> None:
@@ -208,9 +208,9 @@ async def test_pushed_shadow_document_updates_state() -> None:
     )
 
     thermostat = coordinator.data[fixtures.THERMOSTAT_ID]
-    assert thermostat["_shadow_properties"][HOLD] == 2
-    assert thermostat["_shadow_properties"][TEMPERATURE] == 2350
-    assert thermostat["_fresh"] is True
+    assert thermostat.properties[HOLD] == 2
+    assert thermostat.properties[TEMPERATURE] == 2350
+    assert thermostat.fresh is True
 
 
 async def test_push_availability_adjusts_polling_interval() -> None:

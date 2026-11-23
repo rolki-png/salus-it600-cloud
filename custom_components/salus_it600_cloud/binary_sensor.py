@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .api import DeviceListing
 from .coordinator import SalusCloudCoordinator, SalusDevice
 from .devices import is_climate_device
 from .entity import SalusEntity
@@ -27,20 +28,20 @@ async def async_setup_entry(
     coordinator: SalusCloudCoordinator = entry.runtime_data
     entities: list[BinarySensorEntity] = []
     for device_id, device in coordinator.data.items():
-        if _is_binary_sensor_device(device):
-            entities.append(SalusCloudBinarySensor(coordinator, device_id, device, _get_device_class(device)))
-        if is_climate_device(device):
+        if _is_binary_sensor_device(device.listing):
+            entities.append(SalusCloudBinarySensor(coordinator, device_id, device, _get_device_class(device.listing)))
+        if is_climate_device(device.listing):
             entities.append(SalusRunningState(coordinator, device_id, device))
     async_add_entities(entities)
 
 
-def _is_binary_sensor_device(device: dict[str, Any]) -> bool:
-    return device["type"].lower() in BINARY_SENSOR_TYPES or device["model"].upper().startswith("WLS")
+def _is_binary_sensor_device(device: DeviceListing) -> bool:
+    return device.type.lower() in BINARY_SENSOR_TYPES or device.model.upper().startswith("WLS")
 
 
-def _get_device_class(device: dict[str, Any]) -> BinarySensorDeviceClass | None:
-    device_type = device["type"].lower()
-    if "door" in device_type or "window" in device_type or device["model"].upper().startswith("WLS"):
+def _get_device_class(device: DeviceListing) -> BinarySensorDeviceClass | None:
+    device_type = device.type.lower()
+    if "door" in device_type or "window" in device_type or device.model.upper().startswith("WLS"):
         return BinarySensorDeviceClass.DOOR
     if "motion" in device_type:
         return BinarySensorDeviceClass.MOTION
@@ -86,7 +87,7 @@ class SalusCloudBinarySensor(SalusEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        data = self.device_data
+        data = self.listing_fields
         for field in ("is_on", "state", "active", "triggered", "open"):
             if field in data and (value := _as_bool(data[field])) is not None:
                 return value

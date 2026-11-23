@@ -23,7 +23,7 @@ async def async_setup_entry(
         [
             SalusCloudSwitch(coordinator, device_id, device)
             for device_id, device in coordinator.data.items()
-            if is_switch_device(device)
+            if is_switch_device(device.listing)
         ]
     )
 

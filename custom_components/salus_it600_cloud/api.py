@@ -4,7 +4,7 @@ import asyncio
 import base64
 import json
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -53,27 +53,72 @@ class GatewayInfo:
     device_code: str
 
 
+@dataclass(frozen=True)
+class DeviceListing:
+    id: str
+    device_code: str
+    gateway_id: str
+    type: str
+    model: str
+    name: str
+    fields: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class OneTouchRule:
+    id: str
+    gateway_id: str
+    name: str
+    trigger_key: str
+
+
 @dataclass
 class SalusMetadata:
     gateways: list[GatewayInfo]
-    devices: list[dict[str, Any]]
-    rules: list[dict[str, Any]]
+    devices: list[DeviceListing]
+    rules: list[OneTouchRule]
 
 
-DEVICE_TEXT_FIELDS = ("type", "model", "name")
+AUTO_GENERATED_RULE_PREFIX = "_"
 
 
-def parse_gateway_items(gateway_id: str, items: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def parse_gateway_items(gateway_id: str, items: Any) -> tuple[list[DeviceListing], list[OneTouchRule]]:
     """The cloud sends null type, model and name on some accounts (upstream issue #10)."""
-    devices: list[dict[str, Any]] = []
-    rules: list[dict[str, Any]] = []
+    devices: list[DeviceListing] = []
+    rules: list[OneTouchRule] = []
     for item in _leaf_items(items):
         if "rule_trigger_key" in item:
-            rules.append({**item, "_gateway_id": gateway_id})
-        else:
-            text = {field: item.get(field) if isinstance(item.get(field), str) else "" for field in DEVICE_TEXT_FIELDS}
-            devices.append({**item, **text, "_gateway_id": gateway_id})
+            if (rule := _parse_rule(gateway_id, item)) is not None:
+                rules.append(rule)
+        elif item.get("id") and item.get("device_code"):
+            devices.append(
+                DeviceListing(
+                    id=str(item["id"]),
+                    device_code=str(item["device_code"]),
+                    gateway_id=gateway_id,
+                    type=_text(item.get("type")),
+                    model=_text(item.get("model")),
+                    name=_text(item.get("name")),
+                    fields=item,
+                )
+            )
     return devices, rules
+
+
+def _parse_rule(gateway_id: str, item: dict[str, Any]) -> OneTouchRule | None:
+    name = _text((item.get("rule") or {}).get("name"))
+    if not item["rule_trigger_key"] or name.startswith(AUTO_GENERATED_RULE_PREFIX):
+        return None
+    return OneTouchRule(
+        id=str(item.get("id", "")),
+        gateway_id=gateway_id,
+        name=name or "Unknown Rule",
+        trigger_key=item["rule_trigger_key"],
+    )
+
+
+def _text(value: Any) -> str:
+    return value if isinstance(value, str) else ""
 
 
 def _leaf_items(items: Any) -> Iterator[dict[str, Any]]:
@@ -214,8 +259,8 @@ class SalusCloudApi:
 
     async def fetch_metadata(self) -> SalusMetadata:
         gateways: list[GatewayInfo] = []
-        devices: list[dict[str, Any]] = []
-        rules: list[dict[str, Any]] = []
+        devices: list[DeviceListing] = []
+        rules: list[OneTouchRule] = []
         for item in await self.get_gateways():
             gateway_id = item.get("id")
             if not gateway_id:
