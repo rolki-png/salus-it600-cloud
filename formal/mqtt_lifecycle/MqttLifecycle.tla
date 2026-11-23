@@ -28,10 +28,12 @@ CONSTANTS
     RenewBeforeExpiry,  \* mqtt.py:174 _run waits for a lost connection only until renewal is due
     WaitForConnack,     \* mqtt.py:196-199 _async_connect waits for CONNACK before _connected.set()
     StaleClientGuard,   \* the `client is self._client` tests in the _handle_* methods
-    EvaluateAfterSend,  \* mqtt.py:228 _async_subscribe evaluates SUBACKs that arrived early
+    EvaluateAfterSend,  \* mqtt.py:229 _async_subscribe evaluates SUBACKs that arrived early
     RefuseLostConnection,   \* mqtt.py:200-201 _async_connect raises when the connection is already lost
     RecheckAfterWake,       \* mqtt.py:138 async_publish_shadow looks at _connected again when it resumes
-    SubscribingPerClient    \* mqtt.py:268 _handle_disconnect asks whether the lost client is the one subscribing
+    SubscribingPerClient,   \* mqtt.py:270 _handle_disconnect asks whether the lost client is the one subscribing
+    \* mqtt.py:282 _evaluate_subscriptions takes a loss as a refusal only while a SUBSCRIBE is unanswered
+    RefuseOnlyUnanswered
 
 VARIABLES
     \* Fields of SalusMqttConnection (mqtt.py:100-112 __init__); client 0 is None.
@@ -91,7 +93,7 @@ Init ==
 -----------------------------------------------------------------------------
 (* Pieces of event-loop steps.  Each sets only the variables listed.       *)
 
-\* mqtt.py:230-234 _async_stop_client.  Sets client, connected, pc, job, tc.
+\* mqtt.py:231-235 _async_stop_client.  Sets client, connected, pc, job, tc.
 StopClient(stopPc, idlePc) ==
     /\ client' = 0
     /\ connected' = FALSE
@@ -114,18 +116,30 @@ EnterWait(connectedIfWaiting) ==
              /\ connected' = connectedIfWaiting
              /\ UNCHANGED <<client, tc>>
 
-\* mqtt.py:279-287 _evaluate_subscriptions and mqtt.py:289-299 _set_push_available.
+\* Who decided about push, for the properties.  `kind` stands when the verdict
+\* comes from the current client and its own subscription.
+VerdictOf(by, kind) ==
+    IF by # client THEN "stale_client"
+    ELSE IF subClient # by THEN "stale_flag"
+    ELSE kind
+
+\* A lost connection is a refusal by the AWS IoT policy only while a SUBSCRIBE
+\* that paho took for that connection has no answer the event loop has seen.
+LossKind(c, acks) ==
+    IF \E m \in 1..nextMid[c] : acks[m] = "none" THEN "drop" ELSE "idle_drop"
+
+\* mqtt.py:278-290 _evaluate_subscriptions and mqtt.py:292-302 _set_push_available.
 \* Sets subscribing, pushAvailable, pushDenied, verdictBy.
-Evaluate(runs, acks, sent, mids, by) ==
-    LET done    == runs /\ subscribing # 0 /\ sent /\ \A m \in mids : acks[m] # "none"
-        granted == \A m \in mids : acks[m] = "ok"
+Evaluate(runs, acks, sent, mids, isLost, by) ==
+    LET unanswered == \E m \in mids : acks[m] = "none"
+        refused == RefuseOnlyUnanswered /\ isLost /\ unanswered
+        done    == runs /\ subscribing # 0 /\ (refused \/ (sent /\ ~unanswered))
+        granted == ~refused /\ \A m \in mids : acks[m] = "ok"
     IN  /\ subscribing' = IF done THEN 0 ELSE subscribing
         /\ pushAvailable' = IF done THEN (IF granted THEN "yes" ELSE "no") ELSE pushAvailable
         /\ pushDenied' = (pushDenied \/ (done /\ ~granted))
         /\ verdictBy' = IF ~done THEN verdictBy
-                        ELSE IF by # client THEN "stale_client"
-                        ELSE IF subClient # client THEN "stale_flag"
-                        ELSE "suback"
+                        ELSE VerdictOf(by, IF refused THEN LossKind(by, acks) ELSE "suback")
 
 \* mqtt.py:202-206 _async_connect and mqtt.py:216-220 _async_subscribe, up to
 \* the first await.  Sets queue, ppc, client, connected, pc, job, tc, batch,
@@ -173,7 +187,7 @@ PubTake ==
 -----------------------------------------------------------------------------
 (* Callbacks that paho's network thread handed to the event loop.          *)
 
-\* mqtt.py:260-262 _handle_connect, queued by mqtt.py:245-247 _on_connect.
+\* mqtt.py:261-263 _handle_connect, queued by mqtt.py:246-248 _on_connect.
 HandleConnect ==
     /\ Head1("on_connect")
     /\ LET e == Head(queue)
@@ -184,28 +198,29 @@ HandleConnect ==
     /\ UNCHANGED <<client, connected, lost, pushVars, taskVars, ppc, envVars,
                    subClient, verdictBy, publishedOn>>
 
-\* mqtt.py:264-272 _handle_disconnect, queued by mqtt.py:249-250 _on_disconnect.
+\* mqtt.py:265-271 _handle_disconnect, queued by mqtt.py:250-251 _on_disconnect.
+\* Without RefuseOnlyUnanswered every loss of the subscribing client is a refusal.
 HandleDisconnect ==
     /\ Head1("on_disconnect")
     /\ LET e == Head(queue)
            applies == Current(e.c)
-           denies  == applies /\ IF SubscribingPerClient THEN subscribing = e.c
+           asks    == applies /\ IF SubscribingPerClient THEN subscribing = e.c
                                                          ELSE subscribing # 0
        IN  /\ known' = [known EXCEPT ![e.c] = IF @ = "live" THEN "dropped" ELSE @]
            /\ connected' = IF applies THEN FALSE ELSE connected
            /\ lost' = IF applies THEN TRUE ELSE lost
-           /\ subscribing' = IF denies THEN 0 ELSE subscribing
-           /\ pushAvailable' = IF denies THEN "no" ELSE pushAvailable
-           /\ pushDenied' = (pushDenied \/ denies)
-           /\ verdictBy' = IF ~denies THEN verdictBy
-                           ELSE IF e.c # client THEN "stale_client"
-                           ELSE IF subClient # e.c THEN "stale_flag"
-                           ELSE "drop"
+           /\ IF RefuseOnlyUnanswered
+                  THEN Evaluate(asks, subacks, subsSent, expected, TRUE, e.c)
+                  ELSE /\ subscribing' = IF asks THEN 0 ELSE subscribing
+                       /\ pushAvailable' = IF asks THEN "no" ELSE pushAvailable
+                       /\ pushDenied' = (pushDenied \/ asks)
+                       /\ verdictBy' = IF ~asks THEN verdictBy
+                                       ELSE VerdictOf(e.c, LossKind(e.c, subacks))
            /\ queue' = IF applies /\ ~lost /\ pc = "wait_lost" THEN Append(q, Wake("lost")) ELSE q
     /\ UNCHANGED <<client, connack, subsSent, expected, subacks, taskVars, ppc,
                    envVars, subClient, publishedOn>>
 
-\* mqtt.py:274-277 _handle_subscribe, queued by mqtt.py:252-254 _on_subscribe.
+\* mqtt.py:273-276 _handle_subscribe, queued by mqtt.py:253-255 _on_subscribe.
 HandleSubscribe ==
     /\ Head1("on_subscribe")
     /\ LET e == Head(queue)
@@ -213,7 +228,7 @@ HandleSubscribe ==
            acks == IF applies THEN [subacks EXCEPT ![e.m] = IF e.ok THEN "ok" ELSE "failed"]
                    ELSE subacks
        IN  /\ subacks' = acks
-           /\ Evaluate(applies, acks, subsSent, expected, e.c)
+           /\ Evaluate(applies, acks, subsSent, expected, lost, e.c)
     /\ queue' = q
     /\ UNCHANGED <<connVars, subsSent, expected, taskVars, ppc, envVars,
                    known, subClient, publishedOn>>
@@ -266,8 +281,10 @@ RunConnackArrived ==
                 /\ UNCHANGED <<lost, connack, pushVars, batch, jobOk, jobMid, ppc,
                                envVars, ghostVars>>
 
-\* mqtt.py:223-228 _async_subscribe, after to_thread(client.subscribe) returned.
+\* mqtt.py:223-229 _async_subscribe, after to_thread(client.subscribe) returned.
 \* A refused call leaves _subscribing_client set (mqtt.py:225 _async_subscribe).
+\* Every batch is evaluated (mqtt.py:227 _async_subscribe), because the loss of
+\* the connection can reach the event loop before the call that sent it returns.
 RunSubscribeReturned ==
     /\ Head1("sub_ret")
     /\ queue' = q
@@ -276,17 +293,16 @@ RunSubscribeReturned ==
            THEN /\ Fail
                 /\ UNCHANGED <<lost, connack, pushVars, batch, jobOk, jobMid, ppc,
                                envVars, ghostVars>>
-       ELSE IF batch < Batches
-           THEN /\ expected' = mids
-                /\ batch' = batch + 1
-                /\ job' = "queued"
-                /\ UNCHANGED <<connVars, pushAvailable, pushDenied, subscribing, subsSent,
-                               subacks, pc, tc, jobOk, jobMid, ppc, envVars, ghostVars>>
        ELSE /\ expected' = mids
-            /\ subsSent' = TRUE
-            /\ Evaluate(EvaluateAfterSend, subacks, TRUE, mids, tc)
-            /\ EnterWait(connected)
-            /\ UNCHANGED <<lost, connack, subacks, batch, jobOk, jobMid, ppc, envVars,
+            /\ subsSent' = (batch = Batches)
+            /\ Evaluate(TRUE, subacks, EvaluateAfterSend /\ batch = Batches, mids, lost, tc)
+            /\ IF batch < Batches
+                   THEN /\ batch' = batch + 1
+                        /\ job' = "queued"
+                        /\ UNCHANGED <<client, connected, pc, tc>>
+                   ELSE /\ EnterWait(connected)
+                        /\ UNCHANGED batch
+            /\ UNCHANGED <<lost, connack, subacks, jobOk, jobMid, ppc, envVars,
                            known, subClient, publishedOn>>
 
 \* mqtt.py:179-181 _run, the connection was lost.
@@ -377,7 +393,7 @@ ThreadSubscribes ==
     /\ UNCHANGED <<connVars, pushVars, pc, tc, batch, ppc, queue,
                    nextClient, sock, credExpiry, reconnects, now, ghostVars>>
 
-\* mqtt.py:237-241 _stop_sync.  loop_stop() joins paho's thread, so every
+\* mqtt.py:238-242 _stop_sync.  loop_stop() joins paho's thread, so every
 \* callback of the stopped client is queued before the thread call returns.
 \* paho may or may not report the clean disconnect before it exits, and it
 \* always reports a socket it has already closed.
@@ -394,7 +410,7 @@ ThreadStops ==
                    nextClient, credExpiry, nextMid, reconnects, now, ghostVars>>
 
 \* The to_thread future completes and wakes the task (mqtt.py:195 _async_connect,
-\* mqtt.py:223 _async_subscribe, mqtt.py:234 _async_stop_client).
+\* mqtt.py:223 _async_subscribe, mqtt.py:235 _async_stop_client).
 ThreadReturns ==
     /\ job = "ran"
     /\ job' = "none"
@@ -460,8 +476,8 @@ Tick ==
 
 -----------------------------------------------------------------------------
 (* The broker and paho's network thread.  Callbacks are queued with         *)
-(* call_soon_threadsafe: mqtt.py:247 _on_connect, mqtt.py:250 _on_disconnect *)
-(* and mqtt.py:254 _on_subscribe.                                           *)
+(* call_soon_threadsafe: mqtt.py:248 _on_connect, mqtt.py:251 _on_disconnect *)
+(* and mqtt.py:255 _on_subscribe.                                           *)
 
 BrokerAccepts(c) ==
     /\ sock[c] = "connecting"
@@ -553,7 +569,7 @@ TypeOK ==
     /\ now \in 0..MaxTime
     /\ known \in [Clients -> {"unacked", "live", "dropped"}]
     /\ subClient \in 0..MaxClients
-    /\ verdictBy \in {"none", "suback", "drop", "stale_flag", "stale_client"}
+    /\ verdictBy \in {"none", "suback", "drop", "idle_drop", "stale_flag", "stale_client"}
     /\ publishedOn \in {"none", "live", "unacked", "dropped", "expired"}
 
 PublishOnlyAfterConnack == publishedOn # "unacked"
@@ -565,6 +581,8 @@ NoPublishOnDroppedConnection == publishedOn # "dropped"
 PushVerdictFromCurrentClient == verdictBy # "stale_client"
 
 PushVerdictFromItsOwnSubscription == verdictBy # "stale_flag"
+
+RefusalNeedsUnansweredSubscribe == verdictBy # "idle_drop"
 
 PushDefinite ==
     (/\ client # 0

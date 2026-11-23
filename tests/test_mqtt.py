@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -45,25 +46,38 @@ class _Broker:
         *,
         deny_subscribe: bool = False,
         disconnect_on_subscribe: bool = False,
+        loss_heard_before_subscribe_returns: bool = False,
         publish_succeeds: bool = True,
         failing_connects: tuple[str, ...] = (),
     ) -> None:
         """Initialize the broker.
 
+        loss_heard_before_subscribe_returns: with disconnect_on_subscribe, the event loop hears of the loss
+            before the client.subscribe call that caused it returns
         failing_connects: fate of the first connections in order: "dropped" right after CONNACK, "refused",
-            "closed" for a socket lost after CONNACK that paho reports only when the client is stopped, or
+            "closed" for a socket lost after CONNACK that paho reports only when the client is stopped,
+            "closing" for a socket lost after CONNACK, where the event loop hears of the loss before the first
+            client.subscribe call returns, or
             "held" for a CONNACK that is sent only when the test calls accept()
         """
         self.deny_subscribe = deny_subscribe
         self.disconnect_on_subscribe = disconnect_on_subscribe
+        self.loss_heard_before_subscribe_returns = loss_heard_before_subscribe_returns
         self.publish_succeeds = publish_succeeds
         self.failing_connects = failing_connects
         self.clients: list[_Client] = []
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def create_client(self, client_id: str) -> "_Client":
+        self._loop = asyncio.get_running_loop()
         client = _Client(self, client_id)
         self.clients.append(client)
         return client
+
+    def wait_for_queued_callbacks(self) -> None:
+        handled = threading.Event()
+        self._loop.call_soon_threadsafe(handled.set)
+        assert handled.wait(timeout=3)
 
 
 class _Client:
@@ -82,6 +96,7 @@ class _Client:
         self.stopped = False
         self._connected = False
         self._unreported_close = False
+        self._closes_at_subscribe = False
         self._mid = 0
 
     def tls_set_context(self, context: object = None) -> None:
@@ -109,6 +124,8 @@ class _Client:
         if fate == "closed":
             self._connected = False
             self._unreported_close = True
+        if fate == "closing":
+            self._closes_at_subscribe = True
 
     def loop_stop(self) -> None:
         if self._unreported_close:
@@ -123,12 +140,19 @@ class _Client:
         return self._connected
 
     def subscribe(self, topics: list[tuple[str, int]]) -> tuple[int, int | None]:
+        if self._closes_at_subscribe:
+            self._closes_at_subscribe = False
+            self.drop()
         if not self._connected:
+            # A command woken by this connection gets to run before the failed call returns
+            self.broker.wait_for_queued_callbacks()
             return mqtt.MQTT_ERR_NO_CONN, None
         self._mid += 1
         self.subscriptions.append([topic for topic, _ in topics])
         if self.broker.disconnect_on_subscribe:
             self.drop()
+            if self.broker.loss_heard_before_subscribe_returns:
+                self.broker.wait_for_queued_callbacks()
             return mqtt.MQTT_ERR_SUCCESS, self._mid
         code = 0x80 if self.broker.deny_subscribe else 1
         self.on_subscribe(
@@ -379,3 +403,35 @@ async def test_subscribe_failing_on_closed_socket_does_not_disable_push() -> Non
 
     assert push_states == [True]
     assert [len(client.subscriptions) for client in broker.clients] == [0, 0, 1]
+
+
+async def test_connection_lost_before_any_subscribe_was_sent_does_not_disable_push() -> None:
+    """Loss that reaches the event loop while subscribing, before any SUBSCRIBE went out, is not a refusal."""
+
+    broker = _Broker(failing_connects=("closing",))
+    push_states: list[bool] = []
+    connection = _connection(broker, push_states=push_states)
+    await connection.async_start(DEVICE_CODES)
+
+    await _until(lambda: connection.push_available is not None)
+    await connection.async_stop()
+
+    assert push_states == [True]
+    assert [len(client.subscriptions) for client in broker.clients] == [0, 1]
+
+
+async def test_disconnect_heard_before_the_first_of_two_subscribes_returns_disables_push() -> None:
+    """Refusal by disconnect is recognised when the loss is heard before the SUBSCRIBE that caused it is recorded."""
+
+    codes = [f"{fixtures.GATEWAY_CODE}-SR600-{index:016X}" for index in range(11)]
+    broker = _Broker(disconnect_on_subscribe=True, loss_heard_before_subscribe_returns=True)
+    push_states: list[bool] = []
+    connection = _connection(broker, push_states=push_states)
+    await connection.async_start(codes)
+    await _until(lambda: len(broker.clients) == 2 and broker.clients[1].is_connected())
+
+    await connection.async_publish_shadow(fixtures.RELAY_CODE, "11", {"ep9:sOnOffS:SetOnOff": 0})
+    await connection.async_stop()
+
+    assert push_states == [False]
+    assert [len(client.subscriptions) for client in broker.clients] == [1, 0]

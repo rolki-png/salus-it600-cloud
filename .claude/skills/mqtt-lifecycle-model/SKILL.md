@@ -30,6 +30,7 @@ Each case in `formal/mqtt_lifecycle/cases/` starts with an `expect:` line. `curr
 | `NoPublishOnDroppedConnection` | A command is published only on a connection the event loop has not yet been told is lost. | A command sent while the connection comes and goes fails at once and is not sent on the next connection. | `bug-connected-after-loss`, `bug-command-resumes-after-loss` |
 | `PushVerdictFromCurrentClient` | Only callbacks of the current client decide whether push works. | The disconnect of a client that was stopped after its subscription failed switches push off for good. | `broken-no-stale-client-guard` |
 | `PushVerdictFromItsOwnSubscription` | Push is declared denied only because of a subscription made on the same connection. | A connection that drops before it subscribes is taken as a refusal by the AWS IoT policy, and push stays off until Home Assistant restarts. | `bug-stale-subscribing-flag` |
+| `RefusalNeedsUnansweredSubscribe` | A lost connection is taken as a refusal by the AWS IoT policy only while a SUBSCRIBE sent on that connection is unanswered. | A connection that drops after its CONNACK, before any SUBSCRIBE went out or after every SUBSCRIBE was answered, switches push off until Home Assistant restarts. | `bug-idle-loss-is-a-refusal` |
 | `PushDefinite` | Once every SUBSCRIBE of a connection is answered, `push_available` is `True` or `False`. | The coordinator never learns that push works and keeps the fast polling. | `broken-no-evaluate-after-send` |
 
 A `bug-<commit>-` case replays a bug that the named commit fixed, by setting the switch for that fix to `FALSE`. A `broken-` case removes something that never was missing.
@@ -86,8 +87,9 @@ A pass covers the model within these bounds, not the running integration.
 - asyncio runs callbacks in the order they were registered, and `loop_stop()` joins paho's thread, so callbacks of a stopped client reach the loop before `_async_stop_client` returns.
 - paho closes a lost socket before it reports the loss, so a failed `client.subscribe` and the disconnect callback reach the loop in either order.
 - A connect, a stop and a queued callback take much less time than `renew_margin`. Time passes only while the loop is idle and `_run` waits or sleeps.
+- A connection lost while one of its SUBSCRIBE requests is unanswered was closed by AWS IoT because the policy denies the subscription. MQTT 3.1.1 gives the client no reason for a closed connection, so a network loss in that window is taken as a refusal too.
 - The credentials provider returns credentials that expire later than `renew_margin` from now.
 
-Not covered: `async_stop`, `set_device_codes`, an empty device list, `_handle_message`, the length of the reconnect backoff, the SigV4 URL, whether a publish is confirmed, and anything in `coordinator.py`. `_handle_disconnect` takes every loss of the subscribing connection as a refusal by the AWS IoT policy, also when no SUBSCRIBE had been sent yet, and no invariant asks whether that guess is right. The invariants are safety properties. Nothing here proves that the connection eventually recovers. Fetching the event loop from paho's thread (the bug fixed by `9b09537`) is outside the model.
+Not covered: `async_stop`, `set_device_codes`, an empty device list, `_handle_message`, the length of the reconnect backoff, the SigV4 URL, whether a publish is confirmed, and anything in `coordinator.py`. The invariants are safety properties. Nothing here proves that the connection eventually recovers. Fetching the event loop from paho's thread (the bug fixed by `9b09537`) is outside the model.
 
 `/maintain-formal-verification-skill` brings the model back in line after changes that were merged without rechecking it.

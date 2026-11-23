@@ -224,6 +224,7 @@ class SalusMqttConnection:
             if result != mqtt.MQTT_ERR_SUCCESS:
                 raise SalusCloudConnectionError(f"Subscribing to shadow documents failed: {mqtt.error_string(result)}")
             self._expected_mids.add(mid)
+            self._evaluate_subscriptions()
         self._subscriptions_sent = True
         self._evaluate_subscriptions()
 
@@ -265,11 +266,9 @@ class SalusMqttConnection:
         if client is not self._client:
             return
         self._connected.clear()
-        if self._subscribing_client is client:
-            # AWS IoT closes the connection when the policy does not allow the subscription
-            self._subscribing_client = None
-            self._set_push_available(False)
         self._lost.set()
+        if self._subscribing_client is client:
+            self._evaluate_subscriptions()
 
     def _handle_subscribe(self, client: Any, mid: int, failed: bool) -> None:
         if client is self._client:
@@ -277,14 +276,18 @@ class SalusMqttConnection:
             self._evaluate_subscriptions()
 
     def _evaluate_subscriptions(self) -> None:
-        if (
-            self._subscribing_client is None
-            or not self._subscriptions_sent
-            or not self._expected_mids <= self._subacks.keys()
-        ):
+        if self._subscribing_client is None:
+            return
+        unanswered = self._expected_mids - self._subacks.keys()
+        if self._lost.is_set() and unanswered:
+            # AWS IoT closes the connection when the policy does not allow the subscription
+            available = False
+        elif self._subscriptions_sent and not unanswered:
+            available = not any(self._subacks[mid] for mid in self._expected_mids)
+        else:
             return
         self._subscribing_client = None
-        self._set_push_available(not any(self._subacks[mid] for mid in self._expected_mids))
+        self._set_push_available(available)
 
     def _set_push_available(self, available: bool) -> None:
         if not available:
