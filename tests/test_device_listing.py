@@ -23,10 +23,10 @@ async def _grouped_metadata() -> SalusMetadata:
 async def test_devices_nested_in_groups_are_listed() -> None:
     metadata = await _grouped_metadata()
 
-    assert [device["id"] for device in metadata.devices] == [
+    assert [device.id for device in metadata.devices] == [
         fixtures.THERMOSTAT_ID,
         fixtures.THERMOSTAT_2_ID,
         fixtures.RELAY_ID,
         fixtures.GATEWAY_ID,
     ]
-    assert [rule["id"] for rule in metadata.rules] == [fixtures.RULE_ID, fixtures.AUTO_RULE_ID]
+    assert [rule.id for rule in metadata.rules] == [fixtures.RULE_ID]

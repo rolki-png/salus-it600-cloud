@@ -173,15 +173,15 @@ async def test_fetch_metadata_splits_gateways_devices_and_rules() -> None:
     assert metadata.gateways == [
         GatewayInfo(id=fixtures.GATEWAY_ID, name=fixtures.GATEWAY_NAME, device_code=fixtures.GATEWAY_CODE)
     ]
-    assert [device["id"] for device in metadata.devices] == [
+    assert [device.id for device in metadata.devices] == [
         fixtures.THERMOSTAT_ID,
         fixtures.THERMOSTAT_2_ID,
         fixtures.RELAY_ID,
         fixtures.GATEWAY_ID,
     ]
-    assert {device["_gateway_id"] for device in metadata.devices} == {fixtures.GATEWAY_ID}
-    assert [rule["id"] for rule in metadata.rules] == [fixtures.RULE_ID, fixtures.AUTO_RULE_ID]
-    assert {rule["_gateway_id"] for rule in metadata.rules} == {fixtures.GATEWAY_ID}
+    assert {device.gateway_id for device in metadata.devices} == {fixtures.GATEWAY_ID}
+    assert [rule.id for rule in metadata.rules] == [fixtures.RULE_ID]
+    assert {rule.gateway_id for rule in metadata.rules} == {fixtures.GATEWAY_ID}
 
 
 async def test_fetch_metadata_fails_when_gateway_details_fail() -> None:

@@ -36,7 +36,7 @@ async def async_setup_entry(
         [
             SalusCloudClimate(coordinator, device_id, device)
             for device_id, device in coordinator.data.items()
-            if is_climate_device(device)
+            if is_climate_device(device.listing)
         ]
     )
 
