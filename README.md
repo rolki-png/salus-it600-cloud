@@ -20,10 +20,10 @@ This repository contains a full-featured Home Assistant integration for Salus iT
 
 ## Supported Devices
 
-- 🌡️ Thermostats: HTRP-RF, TS600, VS10/VS20, SQ610, FC600
-- 🔌 Switches: RS600, SPE600, SR600 (relays, plugs, boiler control)
-- 📊 Sensors: Temperature, humidity, battery voltage
-- 🚪 Binary Sensors: WLS door/window sensors, motion sensors
+- 🌡️ Thermostats: HTRP-RF, TS600, VS10/VS20, SQ610, FC600, C900T, TRV3RF
+- 🔌 Switches: RS600, SPE600, SR600, SP600 (relays, plugs, boiler control)
+- 📊 Sensors: Temperature, humidity, battery level, cooling setpoint
+- 🚪 Binary Sensors: WLS and OS600 door/window sensors, MS600 motion sensors, occupancy
 - 🎯 Buttons: OneTouch automation rules
 
 ## Quick Start

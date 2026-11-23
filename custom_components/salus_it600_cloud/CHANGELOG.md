@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Thermostats that report a cooling setpoint (`ep9:sIT600TH:CoolingSetpoint_x100`) offer a target range: the low
+  end is the heating setpoint and the high end the cooling setpoint. A "Cooling setpoint" sensor shows it.
+- Humidity, temperature (`sHumiS`, `sTempS`) and battery level (`ep9:sIT600TH:BatteryLevel`) sensors when the
+  device shadow reports them, on any endpoint. The shadow value wins over the device listing value. Thermostats
+  show the humidity as `current_humidity`.
+- Binary sensors from the IAS zone alarm (`sIASZS:ErrorIASZSAlarmed1`) and occupancy (`sOccupS:Occupancy`) cells.
+- Models C900T and TRV3RF (climate), SP600 and device type `Smart_Relay` (switch), OS600 (door) and MS600 (motion).
+
 ## [1.1.0] - 2026-09-11
 
 ### Added
