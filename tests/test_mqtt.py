@@ -46,11 +46,14 @@ class _Broker:
         *,
         deny_subscribe: bool = False,
         disconnect_on_subscribe: bool = False,
+        loss_heard_before_subscribe_returns: bool = False,
         publish_succeeds: bool = True,
         failing_connects: tuple[str, ...] = (),
     ) -> None:
         """Initialize the broker.
 
+        loss_heard_before_subscribe_returns: with disconnect_on_subscribe, the event loop hears of the loss
+            before the client.subscribe call that caused it returns
         failing_connects: fate of the first connections in order: "dropped" right after CONNACK, "refused",
             "closed" for a socket lost after CONNACK that paho reports only when the client is stopped,
             "closing" for a socket lost after CONNACK, where the event loop hears of the loss before the first
@@ -59,6 +62,7 @@ class _Broker:
         """
         self.deny_subscribe = deny_subscribe
         self.disconnect_on_subscribe = disconnect_on_subscribe
+        self.loss_heard_before_subscribe_returns = loss_heard_before_subscribe_returns
         self.publish_succeeds = publish_succeeds
         self.failing_connects = failing_connects
         self.clients: list[_Client] = []
@@ -146,6 +150,8 @@ class _Client:
         self.subscriptions.append([topic for topic, _ in topics])
         if self.broker.disconnect_on_subscribe:
             self.drop()
+            if self.broker.loss_heard_before_subscribe_returns:
+                self.broker.wait_for_queued_callbacks()
             return mqtt.MQTT_ERR_SUCCESS, self._mid
         code = 0x80 if self.broker.deny_subscribe else 1
         self.on_subscribe(
@@ -398,7 +404,6 @@ async def test_subscribe_failing_on_closed_socket_does_not_disable_push() -> Non
     assert [len(client.subscriptions) for client in broker.clients] == [0, 0, 1]
 
 
-@pytest.mark.xfail(strict=True, reason="open finding: finding-idle-loss-is-a-refusal")
 async def test_connection_lost_before_any_subscribe_was_sent_does_not_disable_push() -> None:
     """Loss that reaches the event loop while subscribing, before any SUBSCRIBE went out, is not a refusal."""
 
@@ -412,3 +417,20 @@ async def test_connection_lost_before_any_subscribe_was_sent_does_not_disable_pu
 
     assert push_states == [True]
     assert [len(client.subscriptions) for client in broker.clients] == [0, 1]
+
+
+async def test_disconnect_heard_before_the_first_of_two_subscribes_returns_disables_push() -> None:
+    """Refusal by disconnect is recognised when the loss is heard before the SUBSCRIBE that caused it is recorded."""
+
+    codes = [f"{fixtures.GATEWAY_CODE}-SR600-{index:016X}" for index in range(11)]
+    broker = _Broker(disconnect_on_subscribe=True, loss_heard_before_subscribe_returns=True)
+    push_states: list[bool] = []
+    connection = _connection(broker, push_states=push_states)
+    await connection.async_start(codes)
+    await _until(lambda: len(broker.clients) == 2 and broker.clients[1].is_connected())
+
+    await connection.async_publish_shadow(fixtures.RELAY_CODE, "11", {"ep9:sOnOffS:SetOnOff": 0})
+    await connection.async_stop()
+
+    assert push_states == [False]
+    assert [len(client.subscriptions) for client in broker.clients] == [1, 0]
