@@ -1,5 +1,3 @@
-"""Tests for Salus Cloud REST API client."""
-
 import base64
 import json
 import logging
@@ -54,8 +52,6 @@ Route = Callable[[], _Response | BaseException]
 
 
 class _Session:
-    """Minimal aiohttp session answering Salus API calls by path and Cognito calls by X-Amz-Target."""
-
     closed = False
 
     def __init__(self, routes: dict[str, Route]) -> None:
@@ -98,21 +94,15 @@ def _api(routes: dict[str, Route]) -> tuple[SalusCloudApi, _Session, MagicMock]:
 
 
 def test_jwt_expiry_reads_exp_claim() -> None:
-    """Token validity comes from the token itself instead of an assumed lifetime."""
-
     assert jwt_expiry(_token(1789143790)) == datetime(2026, 9, 11, 16, 23, 10, tzinfo=UTC)
 
 
 def test_jwt_expiry_of_malformed_token() -> None:
-    """Malformed token has no known expiry."""
-
     assert jwt_expiry("not-a-jwt") is None
     assert jwt_expiry(None) is None
 
 
 async def test_rejected_credentials_raise_authentication_error() -> None:
-    """Wrong password is reported as authentication error so Home Assistant asks for new credentials."""
-
     api, _, _ = _api({})
 
     def _reject() -> None:
@@ -128,8 +118,6 @@ async def test_rejected_credentials_raise_authentication_error() -> None:
 
 
 async def test_unreachable_login_service_raises_connection_error() -> None:
-    """Network failure during login is a connection error, not a reason to ask for new credentials."""
-
     api, _, _ = _api({})
 
     def _unreachable() -> None:
@@ -142,8 +130,6 @@ async def test_unreachable_login_service_raises_connection_error() -> None:
 
 
 async def test_request_timeout_raises_connection_error() -> None:
-    """A timed out API call is reported as connection error, not as an unexpected exception."""
-
     api, _, _ = _api({"/occupants/slider_list": lambda: TimeoutError()})
     await api.authenticate()
 
@@ -152,8 +138,6 @@ async def test_request_timeout_raises_connection_error() -> None:
 
 
 async def test_unauthorized_request_logs_in_again_and_retries() -> None:
-    """Rejected token leads to a new login and one retry of the request."""
-
     responses = iter([_Response(401, {}), _Response(200, fixtures.slider_list())])
     api, _, login = _api({"/occupants/slider_list": lambda: next(responses)})
     await api.authenticate()
@@ -165,8 +149,6 @@ async def test_unauthorized_request_logs_in_again_and_retries() -> None:
 
 
 async def test_api_responses_are_not_logged(caplog: pytest.LogCaptureFixture) -> None:
-    """Personal data from API responses never reaches the log, not even at debug level."""
-
     caplog.set_level(logging.DEBUG)
     api, _, _ = _api({"/occupants/slider_list": lambda: _Response(200, fixtures.slider_list())})
     await api.authenticate()
@@ -178,8 +160,6 @@ async def test_api_responses_are_not_logged(caplog: pytest.LogCaptureFixture) ->
 
 
 async def test_fetch_metadata_splits_gateways_devices_and_rules() -> None:
-    """Gateway details items are split into devices and OneTouch rules, each linked to its gateway."""
-
     api, _, _ = _api(
         {
             "/occupants/slider_list": lambda: _Response(200, fixtures.slider_list()),
@@ -205,8 +185,6 @@ async def test_fetch_metadata_splits_gateways_devices_and_rules() -> None:
 
 
 async def test_fetch_metadata_fails_when_gateway_details_fail() -> None:
-    """Metadata is never returned incomplete when details of a gateway cannot be fetched."""
-
     api, _, _ = _api(
         {
             "/occupants/slider_list": lambda: _Response(200, fixtures.slider_list()),
@@ -220,8 +198,6 @@ async def test_fetch_metadata_fails_when_gateway_details_fail() -> None:
 
 
 async def test_device_shadows_skips_unparsable_payload() -> None:
-    """One malformed shadow payload does not drop shadows of other devices."""
-
     response = fixtures.device_shadows({fixtures.RELAY_CODE: fixtures.relay_shadow(1)})
     response["data"]["success_list"].append({"device_code": fixtures.THERMOSTAT_CODE, "payload": "{broken"})
     api, session, _ = _api({"/devices/device_shadows": lambda: _Response(200, response)})
@@ -234,8 +210,6 @@ async def test_device_shadows_skips_unparsable_payload() -> None:
 
 
 async def test_iot_credentials_from_cognito_identity_pool() -> None:
-    """AWS IoT credentials and their expiry are taken from the Cognito identity pool response."""
-
     api, _, _ = _api(
         {
             "AWSCognitoIdentityService.GetId": lambda: _Response(200, {"IdentityId": "eu-central-1:1111"}),
@@ -266,8 +240,6 @@ async def test_iot_credentials_from_cognito_identity_pool() -> None:
 
 
 async def test_close_keeps_shared_session_open() -> None:
-    """Closing the client does not close the Home Assistant shared HTTP session."""
-
     api, session, _ = _api({})
     session.close = MagicMock()
 

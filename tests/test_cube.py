@@ -1,5 +1,3 @@
-"""Cube history refuses to talk to the network until auth and the query are proven."""
-
 from datetime import datetime, timezone
 from typing import Any
 
@@ -80,8 +78,6 @@ def test_graphql_errors_are_rejected_before_a_selection_set() -> None:
 
 
 def test_history_cells_decode_without_a_shadow_map() -> None:
-    """A bool running cell is unreadable. History does not rebuild property names to get there."""
-
     sample = timestamped_from_cells(
         at=datetime(2026, 10, 1, tzinfo=timezone.utc),
         running=True,

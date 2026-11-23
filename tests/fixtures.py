@@ -1,5 +1,3 @@
-"""API payload fixtures mirroring the structure of Salus Cloud responses (identifiers and personal data are made up)."""
-
 import json
 from typing import Any
 
@@ -43,8 +41,6 @@ GATEWAY = {
 
 
 def slider_list() -> dict[str, Any]:
-    """Return /occupants/slider_list response."""
-
     return {
         "data": [
             {
@@ -77,8 +73,6 @@ def _device(device_id: str, code: str, name: str, model: str, category: str) -> 
 
 
 def slider_details() -> dict[str, Any]:
-    """Return /occupants/slider_details response for the gateway."""
-
     return {
         "data": {
             "id": GATEWAY_ID,
@@ -141,8 +135,6 @@ def slider_details() -> dict[str, Any]:
 
 
 def thermostat_shadow(hold_type: int, temperature_x100: int = 2200, setpoint_x100: int = 2100) -> dict[str, Any]:
-    """Return shadow document of a thermostat."""
-
     return {
         "state": {
             "desired": {"11": {"properties": {"ep9:sIT600TH:SetHoldType": hold_type}}},
@@ -166,8 +158,6 @@ def thermostat_shadow(hold_type: int, temperature_x100: int = 2200, setpoint_x10
 
 
 def relay_shadow(on_off: int) -> dict[str, Any]:
-    """Return shadow document of a relay."""
-
     return {
         "state": {"reported": {"11": {"properties": {"ep9:sOnOffS:OnOff": on_off}, "model": "SR600"}}},
         "version": 120,
@@ -176,8 +166,6 @@ def relay_shadow(on_off: int) -> dict[str, Any]:
 
 
 def device_shadows(shadows: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Return /devices/device_shadows response with stringified shadow payloads."""
-
     return {
         "data": {
             "success_list": [{"device_code": code, "payload": json.dumps(shadow)} for code, shadow in shadows.items()]

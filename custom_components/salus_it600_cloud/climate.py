@@ -1,5 +1,3 @@
-"""Climate platform for Salus iT600 Cloud thermostats."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -33,7 +31,6 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Salus iT600 Cloud thermostats."""
     coordinator: SalusCloudCoordinator = entry.runtime_data
     async_add_entities(
         [
@@ -45,8 +42,6 @@ async def async_setup_entry(
 
 
 class SalusCloudClimate(SalusEntity, ClimateEntity):
-    """Salus iT600 thermostat."""
-
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
@@ -62,21 +57,18 @@ class SalusCloudClimate(SalusEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        """Return the measured temperature."""
         observation = observe(self.shadow_properties)
         sample = None if observation is None else observation.local_temperature
         return None if sample is None else sample.celsius()
 
     @property
     def target_temperature(self) -> float | None:
-        """Return the target temperature."""
         observation = observe(self.shadow_properties)
         sample = None if observation is None else observation.heating_setpoint
         return None if sample is None else sample.celsius()
 
     @property
     def hvac_mode(self) -> HVACMode | None:
-        """Return off for stand-by or system mode off, heat otherwise."""
         observation = observe(self.shadow_properties)
         if observation is None:
             return None
@@ -86,40 +78,32 @@ class SalusCloudClimate(SalusEntity, ClimateEntity):
 
     @property
     def hvac_action(self) -> HVACAction | None:
-        """Return whether the thermostat is heating. Unknown when demand was not an integer."""
         return _HVAC_ACTION[heating_action(observe(self.shadow_properties))]
 
     @property
     def preset_mode(self) -> str | None:
-        """Return preset matching the hold type."""
         observation = observe(self.shadow_properties)
         return None if observation is None else observation.preset_slug()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set target temperature."""
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
             await self.coordinator.async_set_temperature(self._device_id, temperature)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Set preset (synchronized across the gateway when enabled)."""
         await self.coordinator.async_set_hold_type(self._device_id, hold_raw_for_preset(preset_mode))
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set off (stand-by) or heat (follow schedule), synchronized across the gateway when enabled."""
         slug = "away" if hvac_mode == HVACMode.OFF else "schedule"
         await self.coordinator.async_set_hold_type(self._device_id, hold_raw_for_preset(slug))
 
     async def async_turn_on(self) -> None:
-        """Turn heating on (follow schedule)."""
         await self.async_set_hvac_mode(HVACMode.HEAT)
 
     async def async_turn_off(self) -> None:
-        """Turn heating off (stand-by)."""
         await self.async_set_hvac_mode(HVACMode.OFF)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return hold type, system mode, battery voltage and running state."""
         observation = observe(self.shadow_properties)
         if observation is None:
             return {}

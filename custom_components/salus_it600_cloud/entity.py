@@ -1,5 +1,3 @@
-"""Base entity for Salus iT600 Cloud devices."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -11,12 +9,9 @@ from .coordinator import SalusCloudCoordinator, SalusDevice
 
 
 class SalusEntity(CoordinatorEntity[SalusCloudCoordinator]):
-    """Entity of a Salus device backed by coordinator data."""
-
-    _attr_has_entity_name = False  # Name includes gateway name to keep entity ids of multiple apartments apart
+    _attr_has_entity_name = False
 
     def __init__(self, coordinator: SalusCloudCoordinator, device_id: str, device: SalusDevice) -> None:
-        """Initialize the entity."""
         super().__init__(coordinator)
         self._device_id = device_id
         gateway_id = device.get("_gateway_id", "")
@@ -27,15 +22,12 @@ class SalusEntity(CoordinatorEntity[SalusCloudCoordinator]):
 
     @property
     def device_data(self) -> SalusDevice:
-        """Return current data of the device."""
         return self.coordinator.get_device(self._device_id) or {}
 
     @property
     def shadow_properties(self) -> dict[str, Any]:
-        """Return current shadow properties of the device."""
         return self.device_data.get("_shadow_properties", {})
 
     @property
     def available(self) -> bool:
-        """Return whether recent state data of the device is known."""
         return super().available and bool(self.device_data.get("_fresh"))

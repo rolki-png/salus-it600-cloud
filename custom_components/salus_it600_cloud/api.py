@@ -1,5 +1,3 @@
-"""Salus iT600 Cloud REST API client: AWS Cognito login, Salus service API and AWS IoT credentials."""
-
 from __future__ import annotations
 
 import asyncio
@@ -28,12 +26,10 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
-# Token lifetime assumed when the token does not carry its expiry
 TOKEN_FALLBACK_LIFETIME = timedelta(hours=1)
 TOKEN_REFRESH_MARGIN = timedelta(minutes=5)
 COGNITO_IDENTITY_URL = f"https://cognito-identity.{AWS_REGION}.amazonaws.com/"
 COGNITO_LOGIN_PROVIDER = f"cognito-idp.{AWS_REGION}.amazonaws.com/{AWS_USER_POOL_ID}"
-# Cognito error codes meaning the stored credentials can no longer be used
 AUTH_ERROR_CODES = {
     "NotAuthorizedException",
     "UserNotFoundException",
@@ -52,8 +48,6 @@ class SalusCloudConnectionError(Exception):
 
 @dataclass(frozen=True)
 class GatewayInfo:
-    """Salus gateway."""
-
     id: str
     name: str
     device_code: str
@@ -61,8 +55,6 @@ class GatewayInfo:
 
 @dataclass
 class SalusMetadata:
-    """Gateways with their devices and OneTouch rules."""
-
     gateways: list[GatewayInfo]
     devices: list[dict[str, Any]]
     rules: list[dict[str, Any]]
@@ -72,11 +64,7 @@ DEVICE_TEXT_FIELDS = ("type", "model", "name")
 
 
 def parse_gateway_items(gateway_id: str, items: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split slider_details items into devices and OneTouch rules, both linked to their gateway.
-
-    Location groups are flattened at any depth. Each device's type, model and name are strings,
-    because the cloud sends null for them on some accounts.
-    """
+    """The cloud sends null type, model and name on some accounts (upstream issue #10)."""
     devices: list[dict[str, Any]] = []
     rules: list[dict[str, Any]] = []
     for item in _leaf_items(items):
@@ -100,8 +88,6 @@ def _leaf_items(items: Any) -> Iterator[dict[str, Any]]:
 
 @dataclass(frozen=True)
 class IotCredentials:
-    """Temporary AWS credentials for AWS IoT."""
-
     access_key: str
     secret_key: str
     session_token: str
@@ -109,8 +95,6 @@ class IotCredentials:
 
 
 def jwt_expiry(token: str | None) -> datetime | None:
-    """Return expiry time from the exp claim of a JWT token."""
-
     if not token:
         return None
     try:
@@ -122,10 +106,7 @@ def jwt_expiry(token: str | None) -> datetime | None:
 
 
 class SalusCloudApi:
-    """Client for Salus Cloud REST API."""
-
     def __init__(self, email: str, password: str, session: aiohttp.ClientSession | None = None) -> None:
-        """Initialize the client; a passed HTTP session is shared and never closed by the client."""
         self.email = email
         self._password = password
         self._session = session
@@ -138,7 +119,6 @@ class SalusCloudApi:
         self._identity_id: str | None = None
 
     def _sync_authenticate(self) -> None:
-        """Log in using SRP (blocking)."""
         self._cognito = Cognito(
             user_pool_id=AWS_USER_POOL_ID,
             client_id=AWS_CLIENT_ID,
@@ -151,13 +131,11 @@ class SalusCloudApi:
         self._refresh_token = self._cognito.refresh_token
 
     def _sync_refresh_tokens(self) -> None:
-        """Renew tokens using the refresh token (blocking)."""
         self._cognito.renew_access_token()
         self._access_token = self._cognito.access_token
         self._id_token = self._cognito.id_token
 
     async def authenticate(self) -> None:
-        """Log in to AWS Cognito."""
         _LOGGER.debug("Logging in to Salus Cloud")
         await self._login(self._sync_authenticate)
 
@@ -176,7 +154,6 @@ class SalusCloudApi:
         self._token_expiry = jwt_expiry(self._id_token) or datetime.now(UTC) + TOKEN_FALLBACK_LIFETIME
 
     async def _ensure_token(self) -> None:
-        """Renew tokens shortly before they expire."""
         if self._token_expiry and datetime.now(UTC) < self._token_expiry - TOKEN_REFRESH_MARGIN:
             return
         if self._cognito and self._refresh_token:
@@ -210,7 +187,6 @@ class SalusCloudApi:
             return await response.json()
 
     async def _request(self, method: str, endpoint: str, **kwargs: Any) -> Any:
-        """Call a Salus service API endpoint, logging in again once when the token is rejected."""
         await self._ensure_token()
         path = endpoint.split("?", 1)[0]
         _LOGGER.debug("%s %s", method, path)
@@ -227,19 +203,16 @@ class SalusCloudApi:
             raise SalusCloudConnectionError(f"{method} {path} failed: {err!r}") from err
 
     async def get_gateways(self) -> list[dict[str, Any]]:
-        """Return gateways of the account."""
         response = await self._request("GET", "/occupants/slider_list")
         if not isinstance(response, dict):
             return []
         return [item for item in response.get("data", []) if item.get("type") == "gateway"]
 
     async def get_gateway_details(self, gateway_id: str) -> dict[str, Any]:
-        """Return details of a gateway including its devices and rules."""
         response = await self._request("GET", f"/occupants/slider_details?id={gateway_id}&type=gateway")
         return response.get("data", {}) if isinstance(response, dict) else {}
 
     async def fetch_metadata(self) -> SalusMetadata:
-        """Return gateways with their devices and OneTouch rules, failing when any gateway cannot be read."""
         gateways: list[GatewayInfo] = []
         devices: list[dict[str, Any]] = []
         rules: list[dict[str, Any]] = []
@@ -262,7 +235,6 @@ class SalusCloudApi:
         return SalusMetadata(gateways=gateways, devices=devices, rules=rules)
 
     async def get_device_shadows(self, device_codes: list[str]) -> dict[str, dict[str, Any]]:
-        """Return shadow documents of the devices keyed by device code."""
         response = await self._request(
             "POST",
             "/devices/device_shadows",
@@ -291,7 +263,6 @@ class SalusCloudApi:
             return await response.json(content_type=None)
 
     async def get_iot_credentials(self) -> IotCredentials:
-        """Return temporary AWS credentials for AWS IoT from the Cognito identity pool."""
         await self._ensure_token()
         logins = {COGNITO_LOGIN_PROVIDER: self._id_token}
         try:
@@ -320,6 +291,5 @@ class SalusCloudApi:
         )
 
     async def close(self) -> None:
-        """Close the HTTP session if the client created it."""
         if self._owns_session and self._session is not None and not self._session.closed:
             await self._session.close()

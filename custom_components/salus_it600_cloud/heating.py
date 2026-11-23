@@ -1,8 +1,3 @@
-"""Thermostat observation parsed from merged shadow properties.
-
-Platforms call observe() and the metric catalog, never wire names.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -14,15 +9,12 @@ from . import wire
 
 
 class Demand(Enum):
-    """Call for heat as reported by one RunningState cell."""
-
     UNREPORTED = "unreported"
     UNREADABLE = "unreadable"
     IDLE = "idle"
     HEATING = "heating"
 
     def is_on(self) -> bool | None:
-        """Binary-sensor state. None is unknown, not off."""
         if self is Demand.HEATING:
             return True
         if self is Demand.IDLE:
@@ -32,7 +24,6 @@ class Demand(Enum):
         raise RuntimeError(self)
 
     def attribute_label(self) -> str | None:
-        """Climate attribute. Omitted when the cell was not an integer demand."""
         if self is Demand.HEATING:
             return "Heating"
         if self is Demand.IDLE:
@@ -43,12 +34,6 @@ class Demand(Enum):
 
 
 class HeatingAction(Enum):
-    """Climate hvac_action before the Home Assistant enum mapping.
-
-    UNKNOWN wins whenever demand is unreported or unreadable, including standby
-    and system-mode off. OFF is standby or system mode 0 with a reported demand.
-    """
-
     UNKNOWN = "unknown"
     OFF = "off"
     IDLE = "idle"
@@ -57,8 +42,6 @@ class HeatingAction(Enum):
 
 @dataclass(frozen=True)
 class CentiCelsius:
-    """Hundredths of a degree Celsius. The shadow's x100 unit."""
-
     hundredths: int
 
     def __post_init__(self) -> None:
@@ -66,19 +49,15 @@ class CentiCelsius:
             raise TypeError("hundredths must be an int")
 
     def celsius(self) -> float:
-        """Return degrees Celsius. The only scaling of this value."""
         return self.hundredths / 100
 
 
 def centi_celsius_from_degrees(degrees: float) -> int:
-    """Wire hundredths for a setpoint command. Inverse of CentiCelsius.celsius."""
     return round(degrees * 100)
 
 
 @dataclass(frozen=True)
 class DeciVolt:
-    """Tenths of a volt, as BatteryVoltage is reported."""
-
     tenths: int
 
     def __post_init__(self) -> None:
@@ -91,12 +70,6 @@ class DeciVolt:
 
 @dataclass(frozen=True)
 class Hold:
-    """HoldType. raw is None when the key is absent or not an int.
-
-    present is False only when the key is absent. A present non-int is not standby
-    and its preset slug is manual.
-    """
-
     raw: int | None
     present: bool
 
@@ -113,8 +86,6 @@ class Hold:
 
 @dataclass(frozen=True)
 class SystemMode:
-    """SystemMode. raw is None when the key is absent or not an int."""
-
     raw: int | None
 
     def __post_init__(self) -> None:
@@ -128,8 +99,6 @@ class SystemMode:
 
 @dataclass(frozen=True)
 class ThermostatObservation:
-    """One parsed thermostat shadow. observe and history cells are the only builders."""
-
     demand: Demand
     local_temperature: CentiCelsius | None
     heating_setpoint: CentiCelsius | None
@@ -149,7 +118,6 @@ class ThermostatObservation:
             raise TypeError("battery must be DeciVolt")
 
     def hold_label(self) -> str | None:
-        """Schedule, Manual Hold, Frost Protection, or Unknown (n). None if the key is absent."""
         if not self.hold.present:
             return None
         if self.hold.raw is None:
@@ -157,16 +125,11 @@ class ThermostatObservation:
         return _HOLD_LABELS.get(self.hold.raw, f"Unknown ({self.hold.raw})")
 
     def system_mode_label(self) -> str | None:
-        """Off, Auto, Heat, or Unknown (n). None if the key is absent or not an int."""
         if self.system_mode.raw is None:
             return None
         return _SYSTEM_LABELS.get(self.system_mode.raw, f"Unknown ({self.system_mode.raw})")
 
     def preset_slug(self) -> str | None:
-        """schedule, manual, away, or None when HoldType is absent.
-
-        Any other present value, including a non-int, is manual.
-        """
         if not self.hold.present:
             return None
         for slug, raw in _PRESET_RAW.items():
@@ -177,8 +140,6 @@ class ThermostatObservation:
 
 @dataclass(frozen=True)
 class TemperatureMetric:
-    """One statistics sensor. read returns the observation field, not a wire key."""
-
     slug: str
     name: str
     read: Callable[[ThermostatObservation], CentiCelsius | None]
@@ -218,24 +179,17 @@ _HOLD_LABELS: dict[int, str] = {
 
 
 class ThermostatCommand:
-    """Desired-property names the coordinator publishes."""
-
     HOLD = wire.desired(wire.HOLD_TYPE)
     SETPOINT = wire.desired(wire.HEATING_SETPOINT_X100)
     SYSTEM_MODE = wire.desired(wire.SYSTEM_MODE)
 
 
 def hold_raw_for_preset(slug: str) -> int:
-    """Return the HoldType integer for a preset slug. KeyError on an unknown slug."""
     return _PRESET_RAW[slug]
 
 
 def decode_running_cell(value: Any, *, present: bool) -> Demand:
-    """Classify one RunningState cell without knowing its property name.
-
-    Absence is unreported. A present bool is unreadable, because bool is a
-    subclass of int and True == 1 would otherwise count as heating.
-    """
+    """bool is a subclass of int and True == 1, so a bool cell must not count as heating."""
     if not present:
         return Demand.UNREPORTED
     if type(value) is not int:
@@ -246,10 +200,6 @@ def decode_running_cell(value: Any, *, present: bool) -> Demand:
 
 
 def decode_x100_cell(value: Any, *, present: bool) -> CentiCelsius | None:
-    """Hundredths of a degree, or None when the cell is missing or not an int.
-
-    The integer 0 is 0°C. bool and float are not temperatures.
-    """
     if not present or type(value) is not int:
         return None
     return CentiCelsius(value)
@@ -270,7 +220,6 @@ def observation_from_cells(
     battery_tenths: Any,
     battery_present: bool,
 ) -> ThermostatObservation:
-    """Build an observation from raw cells. Callers do not pass property names."""
     tenths = _optional_int(battery_present, battery_tenths)
     return ThermostatObservation(
         demand=decode_running_cell(running, present=running_present),
@@ -283,11 +232,6 @@ def observation_from_cells(
 
 
 def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
-    """Parse merged shadow properties.
-
-    None iff properties is empty. A missing RunningState on a non-empty dict is
-    Demand.UNREPORTED, not idle. A present non-int is Demand.UNREADABLE.
-    """
     if not properties:
         return None
     running_present, running = _cell(properties, wire.RUNNING_STATE)
@@ -313,7 +257,6 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
 
 
 def heating_action(observation: ThermostatObservation | None) -> HeatingAction:
-    """Climate action policy. Unknown demand stays unknown even when the mode is off."""
     if observation is None:
         return HeatingAction.UNKNOWN
     demand = observation.demand

@@ -1,11 +1,3 @@
-"""Every shadow property name the integration reads or writes.
-
-Each name is written once, as the name a device reports. A command's name is
-derived from it, so a command and the parser always agree on which property
-it changes. The grammar check rejects a misspelt service at import, as with
-the ep9:sIT600_TH:RunningState typo fixed in v1.0.2.
-"""
-
 from __future__ import annotations
 
 import re
@@ -30,12 +22,10 @@ TRIGGER_RULE = _reported("ep0:sRule:TriggerRule")
 
 
 def desired(reported: str) -> str:
-    """Name of the command that sets a reported property."""
     service, _, prop = reported.rpartition(":")
     return f"{service}:Set{prop}"
 
 
 def reported(desired_name: str) -> str:
-    """Name a device reports after applying a command."""
     service, _, prop = desired_name.rpartition(":")
     return f"{service}:{prop.removeprefix('Set')}"

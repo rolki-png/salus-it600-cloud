@@ -1,9 +1,3 @@
-"""Cube GraphQL history. Not imported by the coordinator.
-
-Auth, the query document, and the response selection set are unproven.
-This module names no host, header, or credential.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -17,7 +11,7 @@ type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
 
 
 class CubeAuthUnproven(Exception):
-    """The only session this change ships cannot authorize a request."""
+    """The only session this change ships cannot authorise a request."""
 
 
 class CubeQueryError(Exception):
@@ -26,14 +20,11 @@ class CubeQueryError(Exception):
 
 @dataclass(frozen=True)
 class HistoryWindow:
-    """Identity of one history read. No cursor and no stored watermark."""
-
     device_code: str
     start: datetime
     end: datetime
 
     def __post_init__(self) -> None:
-        """Reject a window that is not a complete, ordered, aware span."""
         if not self.device_code:
             raise ValueError("device_code is required")
         if self.start.tzinfo is None or self.end.tzinfo is None:
@@ -44,16 +35,12 @@ class HistoryWindow:
 
 @dataclass(frozen=True)
 class CubeRequest:
-    """Unauthenticated GraphQL document. Transport will not accept this type."""
-
     document: str
     variables: Mapping[str, Json]
 
 
 @dataclass(frozen=True)
 class AuthorizedCubeRequest:
-    """A request a session has accepted. The only type CubeTransport.post takes."""
-
     document: str
     variables: Mapping[str, Json]
     headers: Mapping[str, str]
@@ -61,7 +48,7 @@ class AuthorizedCubeRequest:
 
 class CubeTransport(Protocol):
     async def post(self, request: AuthorizedCubeRequest) -> Mapping[str, Json]:
-        """POST one authorized document. Implementations own the URL and the HTTP session."""
+        """POST one authorised document. Implementations own the URL and the HTTP session."""
 
 
 class CubeSession(Protocol):
@@ -71,8 +58,6 @@ class CubeSession(Protocol):
 
 @dataclass(frozen=True)
 class UnprovenCubeSession:
-    """Shipped session. authorize does not return a request and stores no secret."""
-
     async def authorize(self, request: CubeRequest) -> AuthorizedCubeRequest:
         raise CubeAuthUnproven("Cube auth is not proven")
 
@@ -99,7 +84,6 @@ def timestamped_from_cells(
     battery_tenths: Any = None,
     battery_present: bool = False,
 ) -> TimestampedObservation:
-    """Build one history sample from cells. This does not accept a shadow property map."""
     if at.tzinfo is None:
         raise ValueError("history timestamp must be timezone-aware")
     return TimestampedObservation(
@@ -122,19 +106,11 @@ def timestamped_from_cells(
 
 
 class CubeHistory:
-    """One-shot history read. Not a DataUpdateCoordinator and not cached."""
-
     def __init__(self, transport: CubeTransport, session: CubeSession) -> None:
         self._transport = transport
         self._session = session
 
     async def fetch(self, window: HistoryWindow) -> tuple[TimestampedObservation, ...]:
-        """Return observations for the window.
-
-        UnprovenCubeSession raises before a document is built and before transport.post.
-        Any other session builds the document next. Until that document exists, fetch
-        raises NotImplementedError and still does not post.
-        """
         if isinstance(self._session, UnprovenCubeSession):
             raise CubeAuthUnproven("Cube auth is not proven")
         request = _history_request(window)
@@ -144,18 +120,10 @@ class CubeHistory:
 
 
 def _history_request(window: HistoryWindow) -> CubeRequest:
-    """Build the GraphQL document. Body stays unimplemented until a capture exists."""
     raise NotImplementedError("Cube query document and variable names are unproven")
 
 
 def _parse_history_payload(payload: Mapping[str, Json]) -> tuple[TimestampedObservation, ...]:
-    """Parse a captured payload into observations.
-
-    An envelope with errors, or with no data object, raises CubeQueryError before
-    any row is decoded. A clean envelope still cannot be decoded: the selection
-    set is unproven, and rows must go through timestamped_from_cells rather than
-    a forged shadow map.
-    """
     if payload.get("errors"):
         raise CubeQueryError("GraphQL response contained errors")
     if not isinstance(payload.get("data"), Mapping):

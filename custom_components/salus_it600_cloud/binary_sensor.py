@@ -1,5 +1,3 @@
-"""Binary sensor platform for Salus iT600 Cloud."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -26,7 +24,6 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Salus iT600 Cloud binary sensors."""
     coordinator: SalusCloudCoordinator = entry.runtime_data
     entities: list[BinarySensorEntity] = []
     for device_id, device in coordinator.data.items():
@@ -38,12 +35,10 @@ async def async_setup_entry(
 
 
 def _is_binary_sensor_device(device: dict[str, Any]) -> bool:
-    """Determine if device is a binary sensor."""
     return device["type"].lower() in BINARY_SENSOR_TYPES or device["model"].upper().startswith("WLS")
 
 
 def _get_device_class(device: dict[str, Any]) -> BinarySensorDeviceClass | None:
-    """Determine binary sensor device class."""
     device_type = device["type"].lower()
     if "door" in device_type or "window" in device_type or device["model"].upper().startswith("WLS"):
         return BinarySensorDeviceClass.DOOR
@@ -65,29 +60,20 @@ def _as_bool(value: Any) -> bool | None:
 
 
 class SalusRunningState(SalusEntity, BinarySensorEntity):
-    """Call for heat from RunningState.
-
-    This can be on while climate hvac_action is off, because frost protection still reports demand.
-    """
-
     _attr_device_class = BinarySensorDeviceClass.HEAT
 
     def __init__(self, coordinator: SalusCloudCoordinator, device_id: str, device: SalusDevice) -> None:
-        """Initialize the running-state sensor."""
         super().__init__(coordinator, device_id, device)
         self._attr_name = f"{self._attr_name} {RUNNING_STATE_METRIC.name}"
         self._attr_unique_id = f"{self._attr_unique_id}_{RUNNING_STATE_METRIC.slug}"
 
     @property
     def is_on(self) -> bool | None:
-        """Return whether the thermostat is calling for heat. None when that was not reported as an int."""
         observation = observe(self.shadow_properties)
         return None if observation is None else observation.demand.is_on()
 
 
 class SalusCloudBinarySensor(SalusEntity, BinarySensorEntity):
-    """Salus iT600 Cloud binary sensor."""
-
     def __init__(
         self,
         coordinator: SalusCloudCoordinator,
@@ -95,13 +81,11 @@ class SalusCloudBinarySensor(SalusEntity, BinarySensorEntity):
         device: SalusDevice,
         device_class: BinarySensorDeviceClass | None,
     ) -> None:
-        """Initialize the binary sensor."""
         super().__init__(coordinator, device_id, device)
         self._attr_device_class = device_class
 
     @property
     def is_on(self) -> bool:
-        """Return true if the binary sensor is on."""
         data = self.device_data
         for field in ("is_on", "state", "active", "triggered", "open"):
             if field in data and (value := _as_bool(data[field])) is not None:
