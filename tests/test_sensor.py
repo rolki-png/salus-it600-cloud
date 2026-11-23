@@ -103,19 +103,10 @@ async def test_climate_device_skips_the_legacy_temperature_sensor() -> None:
     assert entities[_uid("hall", "temperature")].native_value == 19.5
 
 
-async def test_listing_values_above_100_are_not_rescaled() -> None:
-    coordinator, _, _ = await create_coordinator()
-    (hall,), _ = parse_gateway_items(
-        fixtures.GATEWAY_ID,
-        [{"id": "hall", "device_code": "hall-code", "type": "sensor", "name": "Hall", "humidity": 101, "battery": 150}],
-    )
-    coordinator.data["hall"] = SalusDevice(listing=hall, properties={}, shadow_index=None, fresh=True)
-    entry = MagicMock()
-    entry.runtime_data = coordinator
-    add_entities = MagicMock()
-
-    await sensor.async_setup_entry(MagicMock(), entry, add_entities)
-
-    entities = {entity.unique_id: entity for entity in add_entities.call_args.args[0]}
-    assert entities[_uid("hall", "humidity")].native_value == 101.0
-    assert entities[_uid("hall", "battery")].native_value == 150.0
+def test_listing_readings_in_hundredths_read_as_degrees_and_percent() -> None:
+    temperature = ("temperature", "current_temperature", "LocalTemperature")
+    assert sensor._value({"temperature": 2150}, temperature, True) == 21.5
+    assert sensor._value({"status": {"LocalTemperature": 2150}}, temperature, True) == 21.5
+    assert sensor._value({"temperature": 21.5}, temperature, True) == 21.5
+    assert sensor._value({"humidity": 4500}, ("humidity",), True) == 45.0
+    assert sensor._value({"battery": 100}, ("battery",), False) == 100.0

@@ -55,16 +55,14 @@ def _has_battery(device: DeviceListing) -> bool:
     return "battery" in fields or "battery_level" in fields or ("status" in fields and "battery" in fields["status"])
 
 
-_TEMPERATURE_DIVISORS: Mapping[str, int] = {"temperature": 1, "current_temperature": 1, "LocalTemperature": 1}
-_HUMIDITY_DIVISORS: Mapping[str, int] = {"humidity": 1, "current_humidity": 1}
-_BATTERY_DIVISORS: Mapping[str, int] = {"battery": 1, "battery_level": 1, "battery_percentage": 1}
-
-
-def _value(data: Mapping[str, Any], divisors: Mapping[str, int]) -> float | None:
+def _value(data: Mapping[str, Any], fields: tuple[str, ...], scale_above_100: bool) -> float | None:
     for source in (data, data.get("status") if isinstance(data.get("status"), dict) else {}):
-        for field, divisor in divisors.items():
+        for field in fields:
             if field in source:
-                return source[field] / divisor
+                value = source[field]
+                if scale_above_100 and isinstance(value, int) and value > 100:
+                    return value / 100.0
+                return float(value)
     return None
 
 
@@ -112,7 +110,7 @@ class SalusCloudTemperatureSensor(SalusCloudSensor):
 
     @property
     def native_value(self) -> float | None:
-        return _value(self.listing_fields, _TEMPERATURE_DIVISORS)
+        return _value(self.listing_fields, ("temperature", "current_temperature", "LocalTemperature"), True)
 
 
 class SalusCloudHumiditySensor(SalusCloudSensor):
@@ -125,7 +123,7 @@ class SalusCloudHumiditySensor(SalusCloudSensor):
 
     @property
     def native_value(self) -> float | None:
-        return _value(self.listing_fields, _HUMIDITY_DIVISORS)
+        return _value(self.listing_fields, ("humidity", "current_humidity"), True)
 
 
 class SalusCloudBatterySensor(SalusCloudSensor):
@@ -138,4 +136,4 @@ class SalusCloudBatterySensor(SalusCloudSensor):
 
     @property
     def native_value(self) -> float | None:
-        return _value(self.listing_fields, _BATTERY_DIVISORS)
+        return _value(self.listing_fields, ("battery", "battery_level", "battery_percentage"), False)
