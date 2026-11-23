@@ -18,7 +18,7 @@ DESIRED_TO_REPORTED = {
 def extract_reported(shadow: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
     """Return device index and reported properties from a shadow document."""
 
-    reported = shadow.get("state", {}).get("reported") or {}
+    reported = (shadow.get("state") or {}).get("reported") or {}
     for index, value in reported.items():
         if isinstance(value, dict) and isinstance(value.get("properties"), dict):
             return index, value["properties"]

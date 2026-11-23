@@ -8,6 +8,7 @@ from custom_components.salus_it600_cloud.api import (
     GatewayInfo,
     SalusCloudConnectionError,
     SalusMetadata,
+    parse_gateway_items,
 )
 from custom_components.salus_it600_cloud.const import CONF_SYNC_MODES
 from custom_components.salus_it600_cloud.coordinator import SalusCloudCoordinator
@@ -20,11 +21,11 @@ CALL_LATER = "custom_components.salus_it600_cloud.coordinator.async_call_later"
 def metadata() -> SalusMetadata:
     """Return metadata of the fixture gateway."""
 
-    items = fixtures.slider_details()["data"]["items"]
+    devices, rules = parse_gateway_items(fixtures.GATEWAY_ID, fixtures.slider_details()["data"]["items"])
     return SalusMetadata(
         gateways=[GatewayInfo(id=fixtures.GATEWAY_ID, name=fixtures.GATEWAY_NAME, device_code=fixtures.GATEWAY_CODE)],
-        devices=[{**item, "_gateway_id": fixtures.GATEWAY_ID} for item in items if "rule_trigger_key" not in item],
-        rules=[{**item, "_gateway_id": fixtures.GATEWAY_ID} for item in items if "rule_trigger_key" in item],
+        devices=devices,
+        rules=rules,
     )
 
 

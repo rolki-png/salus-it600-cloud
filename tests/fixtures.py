@@ -183,3 +183,23 @@ def device_shadows(shadows: dict[str, dict[str, Any]]) -> dict[str, Any]:
             "success_list": [{"device_code": code, "payload": json.dumps(shadow)} for code, shadow in shadows.items()]
         }
     }
+
+
+def grouped_slider_details() -> dict[str, Any]:
+    """Return slider_details of an account whose devices sit in location groups and report "type": None (issue #10)."""
+
+    response = slider_details()
+    thermostat, thermostat_2, relay, gateway, *rules = response["data"]["items"]
+    for device in (thermostat, thermostat_2, relay, gateway):
+        device["type"] = None
+
+    def group(name: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"id": f"group-{name}", "name": name, "type": None, "dashboard_attributes": {"type": "group"}, "items": items}
+
+    response["data"]["items"] = [
+        group("Patro", [thermostat, group("Koupelna", [thermostat_2])]),
+        group("Technika", [relay]),
+        gateway,
+        *rules,
+    ]
+    return response

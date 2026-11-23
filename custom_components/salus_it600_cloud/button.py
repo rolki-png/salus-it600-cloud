@@ -25,7 +25,7 @@ async def async_setup_entry(
         [
             SalusOneTouchButton(coordinator, rule)
             for rule in coordinator.rules
-            if rule.get("rule_trigger_key") and not rule.get("rule", {}).get("name", "").startswith("_")
+            if rule.get("rule_trigger_key") and not ((rule.get("rule") or {}).get("name") or "").startswith("_")
         ]
     )
 
@@ -41,7 +41,7 @@ class SalusOneTouchButton(ButtonEntity):
         self._gateway_id = rule.get("_gateway_id", "")
         self._rule_trigger_key = rule["rule_trigger_key"]
         gateway = coordinator.get_gateway(self._gateway_id)
-        rule_name = rule.get("rule", {}).get("name", "Unknown Rule")
+        rule_name = (rule.get("rule") or {}).get("name") or "Unknown Rule"
         self._attr_name = f"{gateway.name if gateway else 'Salus iT600'} {rule_name}"
         self._attr_unique_id = f"{DOMAIN}_{self._gateway_id}_onetouch_{rule.get('id', '')}"
         device_info = DeviceInfo(

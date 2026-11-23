@@ -11,14 +11,12 @@ SWITCH_MODELS = ("RS600", "SPE600", "SR600")
 def is_climate_device(device: dict[str, Any]) -> bool:
     """Return whether the device is a thermostat."""
     return (
-        (device.get("type") or "").lower() in ("thermostat", "climate")
-        or (device.get("model") or "").upper().startswith(CLIMATE_MODELS)
-        or "thermostat" in (device.get("name") or "").lower()
+        device["type"].lower() in ("thermostat", "climate")
+        or device["model"].upper().startswith(CLIMATE_MODELS)
+        or "thermostat" in device["name"].lower()
     )
 
 
 def is_switch_device(device: dict[str, Any]) -> bool:
     """Return whether the device is a relay or a smart plug."""
-    return (device.get("type") or "").lower() in ("switch", "relay") or (device.get("model") or "").upper().startswith(
-        SWITCH_MODELS
-    )
+    return device["type"].lower() in ("switch", "relay") or device["model"].upper().startswith(SWITCH_MODELS)
