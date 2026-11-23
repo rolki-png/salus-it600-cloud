@@ -268,7 +268,7 @@ def observation_from_cells(
     humidity_x100: Any = None,
     battery_level: Any = None,
 ) -> ThermostatObservation:
-    """The cells after battery_present are None when absent: absent and unreadable both read as unknown."""
+    """Pass None for an absent cell after battery_present. Absent and unreadable cells both read as unknown."""
     tenths = _optional_int(battery_present, battery_tenths)
     return ThermostatObservation(
         demand=decode_running_cell(running, present=running_present),
