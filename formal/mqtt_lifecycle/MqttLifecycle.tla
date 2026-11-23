@@ -200,7 +200,8 @@ HandleDisconnect ==
            /\ verdictBy' = IF ~denies THEN verdictBy
                            ELSE IF e.c # client THEN "stale_client"
                            ELSE IF subClient # e.c THEN "stale_flag"
-                           ELSE "drop"
+                           ELSE IF \E m \in 1..nextMid[e.c] : subacks[m] = "none" THEN "drop"
+                           ELSE "idle_drop"
            /\ queue' = IF applies /\ ~lost /\ pc = "wait_lost" THEN Append(q, Wake("lost")) ELSE q
     /\ UNCHANGED <<client, connack, subsSent, expected, subacks, taskVars, ppc,
                    envVars, subClient, publishedOn>>
@@ -553,7 +554,7 @@ TypeOK ==
     /\ now \in 0..MaxTime
     /\ known \in [Clients -> {"unacked", "live", "dropped"}]
     /\ subClient \in 0..MaxClients
-    /\ verdictBy \in {"none", "suback", "drop", "stale_flag", "stale_client"}
+    /\ verdictBy \in {"none", "suback", "drop", "idle_drop", "stale_flag", "stale_client"}
     /\ publishedOn \in {"none", "live", "unacked", "dropped", "expired"}
 
 PublishOnlyAfterConnack == publishedOn # "unacked"
@@ -565,6 +566,8 @@ NoPublishOnDroppedConnection == publishedOn # "dropped"
 PushVerdictFromCurrentClient == verdictBy # "stale_client"
 
 PushVerdictFromItsOwnSubscription == verdictBy # "stale_flag"
+
+RefusalNeedsUnansweredSubscribe == verdictBy # "idle_drop"
 
 PushDefinite ==
     (/\ client # 0

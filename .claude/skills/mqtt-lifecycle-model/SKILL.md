@@ -36,7 +36,9 @@ A `bug-<commit>-` case replays a bug that the named commit fixed, by setting the
 
 ## Open findings
 
-None. A bug the model finds and nobody was asked to fix is recorded as an open finding: a `finding-` case that expects the break of an invariant `current.cfg` does not list yet, and a test in `tests/test_mqtt.py` marked `xfail(strict=True)`, so that it cannot change unnoticed. Once it is fixed, add a switch whose `FALSE` is the old behaviour, rename the case to `bug-<commit>-`, add the invariant to `current.cfg` and remove the marker.
+`finding-idle-loss-is-a-refusal`: a connection lost while no SUBSCRIBE awaits an answer is taken as a refusal by the AWS IoT policy, and push stays off until Home Assistant restarts. Its test is `test_connection_lost_before_any_subscribe_was_sent_does_not_disable_push`.
+
+A bug the model finds and nobody was asked to fix is recorded as an open finding: a `finding-` case that expects the break of an invariant `current.cfg` does not list yet, and a test in `tests/test_mqtt.py` marked `xfail(strict=True)`, so that it cannot change unnoticed. Once it is fixed, add a switch whose `FALSE` is the old behaviour, rename the case to `bug-<commit>-`, add the invariant to `current.cfg` and remove the marker.
 
 Put every invariant into `current.cfg` as soon as its finding is fixed. A finding case shows only the shortest path to the break, and one invariant can break in several ways: `NoPublishOnDroppedConnection` needed two fixes, and the second path showed up only when `current.cfg` had to keep the invariant.
 
