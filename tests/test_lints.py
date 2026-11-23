@@ -8,27 +8,43 @@ def _sources() -> list[tuple[Path, ast.Module]]:
     return [(path, ast.parse(path.read_text(), str(path))) for path in sorted(PACKAGE.rglob("*.py"))]
 
 
-def _is_dict_get_with_default(node: ast.AST) -> bool:
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "get"
-        and len(node.args) == 2
+def _is_defaulted_lookup(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr == "get" and len(node.args) == 2
+    return isinstance(node.func, ast.Name) and node.func.id == "getattr" and len(node.args) == 3
+
+
+def defaulted_lookup_offences(tree: ast.Module) -> list[int]:
+    return sorted(
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Attribute, ast.Subscript)) and _is_defaulted_lookup(node.value)
     )
 
 
 def test_no_method_call_on_a_defaulted_get() -> None:
     offences = [
-        f"{path.relative_to(PACKAGE)}:{node.lineno}"
-        for path, tree in _sources()
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute) and _is_dict_get_with_default(node.value)
+        f"{path.relative_to(PACKAGE)}:{line}" for path, tree in _sources() for line in defaulted_lookup_offences(tree)
     ]
     assert not offences, (
-        f"{offences}: .get(key, default) returns None when the cloud sends the key as null, "
-        "so a method called on it crashes (upstream issue #10). Write (x.get(key) or default).method(), "
-        "or read a device field that api.parse_gateway_items has already made a string."
+        f"{offences}: .get(key, default) and getattr(obj, name, default) return None when the cloud sends "
+        "the value as null, so a method or index on the result crashes (upstream issue #10). "
+        "Write (x.get(key) or default).method(), or read a device field that api.parse_gateway_items "
+        "has already made a string."
     )
+
+
+def test_defaulted_lookup_lint_catches_methods_and_indexes() -> None:
+    source = (
+        'a = d.get("k", "").lower()\n'
+        'b = d.get("k", "")[0]\n'
+        'c = getattr(x, "k", "").lower()\n'
+        'e = (d.get("k") or "").lower()\n'
+        'f = d.get("k", "")\n'
+    )
+    assert defaulted_lookup_offences(ast.parse(source)) == [1, 2, 3]
 
 
 def paho_thread_offences(source: str) -> tuple[set[str], list[str]]:
@@ -142,7 +158,11 @@ def observation_construction_offences(tree: ast.Module) -> list[int]:
 
 
 def test_only_observation_from_cells_builds_an_observation() -> None:
-    offences = [f"{path.relative_to(PACKAGE)}:{line}" for path, tree in _sources() for line in observation_construction_offences(tree)]
+    offences = [
+        f"{path.relative_to(PACKAGE)}:{line}"
+        for path, tree in _sources()
+        for line in observation_construction_offences(tree)
+    ]
     assert not offences, (
         f"{offences}: build a ThermostatObservation only through heating.observation_from_cells (or observe), "
         "which decodes each raw cell once, so a bool cannot pose as heating and an absent key stays UNREPORTED."
