@@ -36,6 +36,7 @@ from .const import (
     STALE_AFTER_SECONDS,
 )
 from .devices import is_climate_device
+from . import wire
 from .heating import SYSTEM_MODE_HEAT, ThermostatCommand, centi_celsius_from_degrees, hold_raw_for_preset
 from .mqtt import SalusMqttConnection
 from .state import DeviceStateStore, extract_reported
@@ -227,7 +228,7 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
 
     async def async_set_switch(self, device_id: str, turn_on: bool) -> None:
         """Turn relay or smart plug on or off."""
-        await self._async_send([self._require_device(device_id)], {"ep9:sOnOffS:SetOnOff": 1 if turn_on else 0})
+        await self._async_send([self._require_device(device_id)], {wire.desired(wire.ON_OFF): 1 if turn_on else 0})
 
     async def async_trigger_rule(self, gateway_id: str, rule_trigger_key: str) -> None:
         """Trigger a OneTouch rule of a gateway."""
@@ -236,7 +237,7 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             raise HomeAssistantError(f"Salus gateway {gateway_id} not found")
         try:
             await self._async_publish(
-                gateway.device_code, GATEWAY_SHADOW_INDEX, {"ep0:sRule:SetTriggerRule": rule_trigger_key}
+                gateway.device_code, GATEWAY_SHADOW_INDEX, {wire.desired(wire.TRIGGER_RULE): rule_trigger_key}
             )
         except SalusCloudConnectionError as err:
             raise HomeAssistantError(f"Failed to trigger OneTouch rule: {err}") from err
