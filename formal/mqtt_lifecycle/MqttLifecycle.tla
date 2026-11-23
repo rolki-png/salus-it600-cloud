@@ -18,20 +18,20 @@ EXTENDS Naturals, Sequences
 
 CONSTANTS
     MaxClients,         \* paho clients created before the model stops connecting
-    Batches,            \* SUBSCRIBE requests per connection (mqtt.py:231 _async_subscribe)
+    Batches,            \* SUBSCRIBE requests per connection (mqtt.py:217 _async_subscribe)
     Lifetime,           \* ticks from issuing credentials to their expiry
-    Margin,             \* renew_margin in ticks (mqtt.py:184 _run)
+    Margin,             \* renew_margin in ticks (mqtt.py:170 _run)
     MaxTime,
     MaxPahoReconnects,  \* automatic reconnects of one paho client (paho loop_forever)
     \* The switches below are TRUE for the code as written.  Each FALSE is a
     \* broken variant that one case in cases/ expects the checker to reject.
-    RenewBeforeExpiry,  \* mqtt.py:186 _run waits for a lost connection only until renewal is due
-    WaitForConnack,     \* mqtt.py:208-211 _async_connect waits for CONNACK before _connected.set()
+    RenewBeforeExpiry,  \* mqtt.py:172 _run waits for a lost connection only until renewal is due
+    WaitForConnack,     \* mqtt.py:194-197 _async_connect waits for CONNACK before _connected.set()
     StaleClientGuard,   \* the `client is self._client` tests in the _handle_* methods
-    EvaluateAfterSend   \* mqtt.py:238 _async_subscribe evaluates SUBACKs that arrived early
+    EvaluateAfterSend   \* mqtt.py:224 _async_subscribe evaluates SUBACKs that arrived early
 
 VARIABLES
-    \* Fields of SalusMqttConnection (mqtt.py:109-121 __init__); client 0 is None.
+    \* Fields of SalusMqttConnection (mqtt.py:100-112 __init__); client 0 is None.
     client, connected, lost, connack,
     pushAvailable, pushDenied, subscribing, subsSent, expected, subacks,
     \* The _run task: where it is suspended, its local `client`, and the
@@ -87,7 +87,7 @@ Init ==
 -----------------------------------------------------------------------------
 (* Pieces of event-loop steps.  Each sets only the variables listed.       *)
 
-\* mqtt.py:240-244 _async_stop_client.  Sets client, connected, pc, job, tc.
+\* mqtt.py:226-230 _async_stop_client.  Sets client, connected, pc, job, tc.
 StopClient(stopPc, idlePc) ==
     /\ client' = 0
     /\ connected' = FALSE
@@ -96,10 +96,10 @@ StopClient(stopPc, idlePc) ==
            THEN pc' = idlePc /\ tc' = tc
            ELSE pc' = stopPc /\ tc' = client
 
-\* mqtt.py:177-182 _run, the `except Exception` branch.
+\* mqtt.py:163-168 _run, the `except Exception` branch.
 Fail == StopClient("stop_sleep", "sleep")
 
-\* mqtt.py:184-194 _run.  An Event that is already set does not suspend the
+\* mqtt.py:170-180 _run.  An Event that is already set does not suspend the
 \* task, so a connection lost during the connect is stopped in the same step.
 \* Sets client, connected, pc, job, tc.
 EnterWait(connectedIfWaiting) ==
@@ -110,7 +110,7 @@ EnterWait(connectedIfWaiting) ==
              /\ connected' = connectedIfWaiting
              /\ UNCHANGED <<client, tc>>
 
-\* mqtt.py:290-294 _evaluate_subscriptions and mqtt.py:296-306 _set_push_available.
+\* mqtt.py:275-279 _evaluate_subscriptions and mqtt.py:281-291 _set_push_available.
 \* Sets subscribing, pushAvailable, pushDenied, verdictBy.
 Evaluate(runs, acks, sent, mids, by) ==
     LET done    == runs /\ subscribing /\ sent /\ \A m \in mids : acks[m] # "none"
@@ -123,7 +123,7 @@ Evaluate(runs, acks, sent, mids, by) ==
                         ELSE IF subClient # client THEN "stale_flag"
                         ELSE "suback"
 
-\* mqtt.py:212-216 _async_connect and mqtt.py:226-230 _async_subscribe, up to
+\* mqtt.py:198-202 _async_connect and mqtt.py:212-216 _async_subscribe, up to
 \* the first await.  Sets queue, ppc, client, connected, pc, job, tc, batch,
 \* subClient and all of pushVars.
 PostConnack ==
@@ -149,7 +149,7 @@ Classify(c) ==
     ELSE IF now >= credExpiry[c] THEN "expired"
     ELSE "live"
 
-\* mqtt.py:154-159 async_publish_shadow, after _connected.wait() has returned.
+\* mqtt.py:140-145 async_publish_shadow, after _connected.wait() has returned.
 PubTake ==
     /\ ppc' = "idle"
     /\ publishedOn' = IF client = 0 THEN publishedOn ELSE Classify(client)
@@ -157,7 +157,7 @@ PubTake ==
 -----------------------------------------------------------------------------
 (* Callbacks that paho's network thread handed to the event loop.          *)
 
-\* mqtt.py:271-273 _handle_connect, queued by mqtt.py:255-257 _on_connect.
+\* mqtt.py:256-258 _handle_connect, queued by mqtt.py:241-243 _on_connect.
 HandleConnect ==
     /\ Head1("on_connect")
     /\ LET e == Head(queue)
@@ -168,7 +168,7 @@ HandleConnect ==
     /\ UNCHANGED <<client, connected, lost, pushVars, taskVars, ppc, envVars,
                    subClient, verdictBy, publishedOn>>
 
-\* mqtt.py:275-283 _handle_disconnect, queued by mqtt.py:259-260 _on_disconnect.
+\* mqtt.py:260-268 _handle_disconnect, queued by mqtt.py:245-246 _on_disconnect.
 HandleDisconnect ==
     /\ Head1("on_disconnect")
     /\ LET e == Head(queue)
@@ -188,7 +188,7 @@ HandleDisconnect ==
     /\ UNCHANGED <<client, connack, subsSent, expected, subacks, taskVars, ppc,
                    envVars, subClient, publishedOn>>
 
-\* mqtt.py:285-288 _handle_subscribe, queued by mqtt.py:262-264 _on_subscribe.
+\* mqtt.py:270-273 _handle_subscribe, queued by mqtt.py:248-250 _on_subscribe.
 HandleSubscribe ==
     /\ Head1("on_subscribe")
     /\ LET e == Head(queue)
@@ -204,7 +204,7 @@ HandleSubscribe ==
 -----------------------------------------------------------------------------
 (* Steps of the _run task, each from one await to the next.                *)
 
-\* mqtt.py:197-207 _async_connect, from the credentials to to_thread(_connect_sync).
+\* mqtt.py:183-193 _async_connect, from the credentials to to_thread(_connect_sync).
 RunCredentials ==
     /\ Head1("creds")
     /\ client' = Head(queue).c
@@ -216,14 +216,14 @@ RunCredentials ==
     /\ queue' = q
     /\ UNCHANGED <<connected, pushVars, batch, jobOk, jobMid, ppc, envVars, ghostVars>>
 
-\* mqtt.py:197 _async_connect raises, mqtt.py:177-180 _run catches it.
+\* mqtt.py:183 _async_connect raises, mqtt.py:163-166 _run catches it.
 RunCredentialsFailed ==
     /\ Head1("creds_err")
     /\ Fail
     /\ queue' = q
     /\ UNCHANGED <<lost, connack, pushVars, batch, jobOk, jobMid, ppc, envVars, ghostVars>>
 
-\* mqtt.py:207-216 _async_connect, after to_thread(_connect_sync) returned.
+\* mqtt.py:193-202 _async_connect, after to_thread(_connect_sync) returned.
 \* Awaiting a future that is already done does not suspend the task.
 RunConnectReturned ==
     /\ Head1("connect_ret")
@@ -241,7 +241,7 @@ RunConnectReturned ==
             /\ UNCHANGED <<connVars, pushVars, tc, batch, job, jobOk, jobMid, ppc,
                            envVars, ghostVars>>
 
-\* mqtt.py:208-216 _async_connect, woken by the CONNACK or by CONNECT_TIMEOUT.
+\* mqtt.py:194-202 _async_connect, woken by the CONNACK or by CONNECT_TIMEOUT.
 RunConnackArrived ==
     /\ Head1("connack")
     /\ IF connack = "ok"
@@ -253,8 +253,8 @@ RunConnackArrived ==
                 /\ UNCHANGED <<lost, connack, pushVars, batch, jobOk, jobMid, ppc,
                                envVars, ghostVars>>
 
-\* mqtt.py:233-238 _async_subscribe, after to_thread(client.subscribe) returned.
-\* A refused call leaves _subscribing set (mqtt.py:235 _async_subscribe).
+\* mqtt.py:219-224 _async_subscribe, after to_thread(client.subscribe) returned.
+\* A refused call leaves _subscribing set (mqtt.py:221 _async_subscribe).
 RunSubscribeReturned ==
     /\ Head1("sub_ret")
     /\ queue' = q
@@ -276,7 +276,7 @@ RunSubscribeReturned ==
             /\ UNCHANGED <<lost, connack, subacks, batch, jobOk, jobMid, ppc, envVars,
                            known, subClient, publishedOn>>
 
-\* mqtt.py:191-193 _run, the connection was lost.
+\* mqtt.py:177-179 _run, the connection was lost.
 RunLost ==
     /\ Head1("lost")
     /\ IF pc = "wait_lost"
@@ -285,7 +285,7 @@ RunLost ==
     /\ queue' = q
     /\ UNCHANGED <<lost, connack, pushVars, batch, jobOk, jobMid, ppc, envVars, ghostVars>>
 
-\* mqtt.py:188-190 _run, the credentials are due for renewal.
+\* mqtt.py:174-176 _run, the credentials are due for renewal.
 RunRenewalDue ==
     /\ Head1("renew")
     /\ IF pc = "wait_lost"
@@ -294,8 +294,8 @@ RunRenewalDue ==
     /\ queue' = q
     /\ UNCHANGED <<lost, connack, pushVars, batch, jobOk, jobMid, ppc, envVars, ghostVars>>
 
-\* mqtt.py:179-180 _run and mqtt.py:193-194 _run sleep after the stop,
-\* mqtt.py:190 _run goes straight back to mqtt.py:176 _run.
+\* mqtt.py:165-166 _run and mqtt.py:179-180 _run sleep after the stop,
+\* mqtt.py:176 _run goes straight back to mqtt.py:162 _run.
 RunStopReturned ==
     /\ Head1("stop_ret")
     /\ pc' = IF pc = "stop_renew" THEN "await_creds" ELSE "sleep"
@@ -303,7 +303,7 @@ RunStopReturned ==
     /\ queue' = q
     /\ UNCHANGED <<connVars, pushVars, tc, batch, jobOk, jobMid, ppc, envVars, ghostVars>>
 
-\* mqtt.py:180-182 _run and mqtt.py:194 _run, back to mqtt.py:176 _run.
+\* mqtt.py:166-168 _run and mqtt.py:180 _run, back to mqtt.py:162 _run.
 RunSleepOver ==
     /\ Head1("sleep_done")
     /\ pc' = "await_creds"
@@ -315,7 +315,7 @@ RunSleepOver ==
 (* async_publish_shadow, called by the coordinator (coordinator.py          *)
 (* _async_publish).                                                         *)
 
-\* mqtt.py:149-159 async_publish_shadow.  With _connected set, wait() returns
+\* mqtt.py:135-145 async_publish_shadow.  With _connected set, wait() returns
 \* without suspending and the client is read in the same step.
 PublishCalled ==
     /\ ppc = "idle"
@@ -324,7 +324,7 @@ PublishCalled ==
            ELSE ppc' = "waiting" /\ UNCHANGED publishedOn
     /\ UNCHANGED <<connVars, pushVars, taskVars, queue, envVars, known, subClient, verdictBy>>
 
-\* mqtt.py:151-159 async_publish_shadow, woken by _connected.set().  Event.wait()
+\* mqtt.py:137-145 async_publish_shadow, woken by _connected.set().  Event.wait()
 \* does not look at the flag again after the wake-up.
 PublishWoken ==
     /\ Head1("wake_pub")
@@ -335,7 +335,7 @@ PublishWoken ==
 -----------------------------------------------------------------------------
 (* Worker threads started with asyncio.to_thread.                           *)
 
-\* mqtt.py:219-223 _connect_sync.  AWS IoT rejects the WebSocket handshake of
+\* mqtt.py:205-209 _connect_sync.  AWS IoT rejects the WebSocket handshake of
 \* expired credentials; any connect can also fail for other reasons.
 ThreadConnects ==
     /\ pc = "connect_sync" /\ job = "queued"
@@ -348,7 +348,7 @@ ThreadConnects ==
     /\ UNCHANGED <<connVars, pushVars, pc, tc, batch, jobMid, ppc, queue,
                    nextClient, credExpiry, nextMid, brokerSubs, reconnects, now, ghostVars>>
 
-\* mqtt.py:233 _async_subscribe.  paho returns MQTT_ERR_NO_CONN without a socket.
+\* mqtt.py:219 _async_subscribe.  paho returns MQTT_ERR_NO_CONN without a socket.
 ThreadSubscribes ==
     /\ pc = "subscribe" /\ job = "queued"
     /\ IF sock[tc] \in {"connecting", "up"}
@@ -362,7 +362,7 @@ ThreadSubscribes ==
     /\ UNCHANGED <<connVars, pushVars, pc, tc, batch, ppc, queue,
                    nextClient, sock, credExpiry, reconnects, now, ghostVars>>
 
-\* mqtt.py:247-251 _stop_sync.  loop_stop() joins paho's thread, so every
+\* mqtt.py:233-237 _stop_sync.  loop_stop() joins paho's thread, so every
 \* callback of the stopped client is queued before the thread call returns.
 \* paho may or may not report the clean disconnect before it exits.
 ThreadStops ==
@@ -376,8 +376,8 @@ ThreadStops ==
     /\ UNCHANGED <<connVars, pushVars, pc, tc, batch, jobOk, jobMid, ppc,
                    nextClient, credExpiry, nextMid, reconnects, now, ghostVars>>
 
-\* The to_thread future completes and wakes the task (mqtt.py:207 _async_connect,
-\* mqtt.py:233 _async_subscribe, mqtt.py:244 _async_stop_client).
+\* The to_thread future completes and wakes the task (mqtt.py:193 _async_connect,
+\* mqtt.py:219 _async_subscribe, mqtt.py:230 _async_stop_client).
 ThreadReturns ==
     /\ job = "ran"
     /\ job' = "none"
@@ -389,7 +389,7 @@ ThreadReturns ==
 -----------------------------------------------------------------------------
 (* Timers and the credentials provider.                                     *)
 
-\* mqtt.py:197 _async_connect: api.py get_iot_credentials returns fresh credentials.
+\* mqtt.py:183 _async_connect: api.py get_iot_credentials returns fresh credentials.
 CredentialsArrive ==
     /\ pc = "await_creds" /\ job = "queued"
     /\ nextClient <= MaxClients
@@ -400,21 +400,21 @@ CredentialsArrive ==
     /\ UNCHANGED <<connVars, pushVars, pc, tc, batch, jobOk, jobMid, ppc,
                    sock, nextMid, brokerSubs, reconnects, now, ghostVars>>
 
-\* mqtt.py:197 _async_connect: the provider raises.
+\* mqtt.py:183 _async_connect: the provider raises.
 CredentialsFail ==
     /\ pc = "await_creds" /\ job = "queued"
     /\ job' = "none"
     /\ queue' = Append(queue, Wake("creds_err"))
     /\ UNCHANGED <<connVars, pushVars, pc, tc, batch, jobOk, jobMid, ppc, envVars, ghostVars>>
 
-\* mqtt.py:208 _async_connect: CONNECT_TIMEOUT cancels the wait and the future.
+\* mqtt.py:194 _async_connect: CONNECT_TIMEOUT cancels the wait and the future.
 ConnackTimesOut ==
     /\ pc = "await_connack" /\ connack = "pending"
     /\ connack' = "cancelled"
     /\ queue' = Append(queue, Wake("connack"))
     /\ UNCHANGED <<client, connected, lost, pushVars, taskVars, ppc, envVars, ghostVars>>
 
-\* mqtt.py:184-186 _run: the timeout is due renew_margin before the expiry.
+\* mqtt.py:170-172 _run: the timeout is due renew_margin before the expiry.
 RenewalTimerFires ==
     /\ pc = "wait_lost" /\ job = "queued"
     /\ now + Margin >= credExpiry[tc]
@@ -422,7 +422,7 @@ RenewalTimerFires ==
     /\ queue' = Append(queue, Wake("renew"))
     /\ UNCHANGED <<connVars, pushVars, pc, tc, batch, jobOk, jobMid, ppc, envVars, ghostVars>>
 
-\* mqtt.py:180 _run and mqtt.py:194 _run: asyncio.sleep ends.
+\* mqtt.py:166 _run and mqtt.py:180 _run: asyncio.sleep ends.
 SleepEnds ==
     /\ pc = "sleep" /\ job = "queued"
     /\ job' = "none"
@@ -443,8 +443,8 @@ Tick ==
 
 -----------------------------------------------------------------------------
 (* The broker and paho's network thread.  Callbacks are queued with         *)
-(* call_soon_threadsafe: mqtt.py:257 _on_connect, mqtt.py:260 _on_disconnect *)
-(* and mqtt.py:264 _on_subscribe.                                           *)
+(* call_soon_threadsafe: mqtt.py:243 _on_connect, mqtt.py:246 _on_disconnect *)
+(* and mqtt.py:250 _on_subscribe.                                           *)
 
 BrokerAccepts(c) ==
     /\ sock[c] = "connecting"
