@@ -6,7 +6,7 @@ import asyncio
 import base64
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -66,6 +66,36 @@ class SalusMetadata:
     gateways: list[GatewayInfo]
     devices: list[dict[str, Any]]
     rules: list[dict[str, Any]]
+
+
+DEVICE_TEXT_FIELDS = ("type", "model", "name")
+
+
+def parse_gateway_items(gateway_id: str, items: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split slider_details items into devices and OneTouch rules, both linked to their gateway.
+
+    Location groups are flattened at any depth. Each device's type, model and name are strings,
+    because the cloud sends null for them on some accounts.
+    """
+    devices: list[dict[str, Any]] = []
+    rules: list[dict[str, Any]] = []
+    for item in _leaf_items(items):
+        if "rule_trigger_key" in item:
+            rules.append({**item, "_gateway_id": gateway_id})
+        else:
+            text = {field: item.get(field) if isinstance(item.get(field), str) else "" for field in DEVICE_TEXT_FIELDS}
+            devices.append({**item, **text, "_gateway_id": gateway_id})
+    return devices, rules
+
+
+def _leaf_items(items: Any) -> Iterator[dict[str, Any]]:
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        if isinstance(item.get("items"), list):
+            yield from _leaf_items(item["items"])
+        else:
+            yield item
 
 
 @dataclass(frozen=True)
@@ -137,7 +167,7 @@ class SalusCloudApi:
         except SoftwareTokenMFAChallengeException as err:
             raise SalusCloudAuthenticationError("MFA is not supported") from err
         except ClientError as err:
-            code = err.response.get("Error", {}).get("Code")
+            code = (err.response.get("Error") or {}).get("Code")
             if code in AUTH_ERROR_CODES:
                 raise SalusCloudAuthenticationError(f"Login rejected: {code}") from err
             raise SalusCloudConnectionError(f"Login failed: {code}") from err
@@ -226,9 +256,9 @@ class SalusCloudApi:
                 )
             )
             details = await self.get_gateway_details(gateway_id)
-            for detail in details.get("items", []):
-                entry = {**detail, "_gateway_id": gateway_id}
-                (rules if "rule_trigger_key" in detail else devices).append(entry)
+            gateway_devices, gateway_rules = parse_gateway_items(gateway_id, details.get("items"))
+            devices.extend(gateway_devices)
+            rules.extend(gateway_rules)
         return SalusMetadata(gateways=gateways, devices=devices, rules=rules)
 
     async def get_device_shadows(self, device_codes: list[str]) -> dict[str, dict[str, Any]]:
