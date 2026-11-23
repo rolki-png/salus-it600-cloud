@@ -22,8 +22,8 @@ DEVICE_CODES = [fixtures.THERMOSTAT_CODE, fixtures.THERMOSTAT_2_CODE, fixtures.R
 
 
 class _MessageInfo:
-    def __init__(self, published: bool) -> None:
-        self.rc = mqtt.MQTT_ERR_SUCCESS
+    def __init__(self, published: bool, rc: int = mqtt.MQTT_ERR_SUCCESS) -> None:
+        self.rc = rc
         self._published = published
 
     def wait_for_publish(self, timeout: float | None = None) -> None:
@@ -46,10 +46,16 @@ class _Broker:
         deny_subscribe: bool = False,
         disconnect_on_subscribe: bool = False,
         publish_succeeds: bool = True,
+        failing_connects: tuple[str, ...] = (),
     ) -> None:
+        """Initialize the broker.
+
+        failing_connects: fate of the first connections in order, "dropped" right after CONNACK or "refused"
+        """
         self.deny_subscribe = deny_subscribe
         self.disconnect_on_subscribe = disconnect_on_subscribe
         self.publish_succeeds = publish_succeeds
+        self.failing_connects = failing_connects
         self.clients: list[_Client] = []
 
     def create_client(self, client_id: str) -> "_Client":
@@ -84,8 +90,16 @@ class _Client:
         self.host = host
 
     def loop_start(self) -> None:
+        index = self.broker.clients.index(self)
+        fate = self.broker.failing_connects[index] if index < len(self.broker.failing_connects) else None
+        if fate == "refused":
+            self.on_connect(self, None, None, ReasonCode(PacketTypes.CONNACK, "Not authorized"), None)
+            self.drop()
+            return
         self._connected = True
         self.on_connect(self, None, None, ReasonCode(PacketTypes.CONNACK, "Success"), None)
+        if fate == "dropped":
+            self.drop()
 
     def loop_stop(self) -> None:
         self.stopped = True
@@ -96,7 +110,9 @@ class _Client:
     def is_connected(self) -> bool:
         return self._connected
 
-    def subscribe(self, topics: list[tuple[str, int]]) -> tuple[int, int]:
+    def subscribe(self, topics: list[tuple[str, int]]) -> tuple[int, int | None]:
+        if not self._connected:
+            return mqtt.MQTT_ERR_NO_CONN, None
         self._mid += 1
         self.subscriptions.append([topic for topic, _ in topics])
         if self.broker.disconnect_on_subscribe:
@@ -109,6 +125,8 @@ class _Client:
         return mqtt.MQTT_ERR_SUCCESS, self._mid
 
     def publish(self, topic: str, payload: str, qos: int = 0, retain: bool = False) -> _MessageInfo:
+        if not self._connected:
+            return _MessageInfo(False, mqtt.MQTT_ERR_NO_CONN)
         self.published.append((topic, json.loads(payload), qos))
         return _MessageInfo(self.broker.publish_succeeds)
 
@@ -282,3 +300,40 @@ async def test_renews_credentials_before_they_expire() -> None:
 
     assert credentials.calls == 2
     assert broker.clients[0].stopped is True
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=SalusCloudConnectionError,
+    reason="open finding, formal/mqtt_lifecycle/cases/finding-publish-on-dropped-connection.cfg",
+)
+async def test_command_waits_for_next_connection_when_accepted_connection_is_already_lost() -> None:
+    """Command sent while the broker accepts a connection and drops it at once goes out on the next connection."""
+
+    broker = _Broker(failing_connects=("dropped",))
+    connection = _connection(broker)
+    await connection.async_start(DEVICE_CODES)
+
+    await connection.async_publish_shadow(fixtures.RELAY_CODE, "11", {"ep9:sOnOffS:SetOnOff": 1})
+    await connection.async_stop()
+
+    assert [len(client.published) for client in broker.clients] == [0, 1]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="open finding, formal/mqtt_lifecycle/cases/finding-push-denied-by-stale-subscribing-flag.cfg",
+)
+async def test_connections_lost_before_subscribing_do_not_disable_push() -> None:
+    """Connections that fail before any subscription reached the broker leave push to the next connection."""
+
+    broker = _Broker(failing_connects=("dropped", "refused"))
+    push_states: list[bool] = []
+    connection = _connection(broker, push_states=push_states)
+    await connection.async_start(DEVICE_CODES)
+
+    await _until(lambda: connection.push_available is not None)
+    await connection.async_stop()
+
+    assert push_states == [True]
