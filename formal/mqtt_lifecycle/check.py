@@ -230,8 +230,9 @@ def run_case(jar: Path, config: Path, workers: str, show_trace: bool) -> bool:
         if name.startswith("finding-"):
             print(
                 f"      The finding no longer reproduces. If {SOURCE_NAME} was fixed, add {expected} to the\n"
-                "      INVARIANTS of cases/current.cfg, delete this case and remove the xfail marker from its test\n"
-                "      in tests/test_mqtt.py."
+                "      INVARIANTS of cases/current.cfg and remove the xfail marker from its test in tests/test_mqtt.py.\n"
+                f"      Then add a switch to {SPEC.name} whose FALSE is the old behaviour and rename this case to\n"
+                "      bug-<commit>-..., so that the invariant stays proven able to fail."
             )
         else:
             print("      The model lost the ability to catch this broken variant; a check that cannot fail is void.")

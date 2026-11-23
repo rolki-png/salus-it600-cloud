@@ -50,7 +50,9 @@ class _Broker:
     ) -> None:
         """Initialize the broker.
 
-        failing_connects: fate of the first connections in order, "dropped" right after CONNACK or "refused"
+        failing_connects: fate of the first connections in order: "dropped" right after CONNACK, "refused",
+            "closed" for a socket lost after CONNACK that paho reports only when the client is stopped, or
+            "held" for a CONNACK that is sent only when the test calls accept()
         """
         self.deny_subscribe = deny_subscribe
         self.disconnect_on_subscribe = disconnect_on_subscribe
@@ -76,8 +78,10 @@ class _Client:
         self.host = ""
         self.subscriptions: list[list[str]] = []
         self.published: list[tuple[str, Any, int]] = []
+        self.started = False
         self.stopped = False
         self._connected = False
+        self._unreported_close = False
         self._mid = 0
 
     def tls_set_context(self, context: object = None) -> None:
@@ -92,16 +96,24 @@ class _Client:
     def loop_start(self) -> None:
         index = self.broker.clients.index(self)
         fate = self.broker.failing_connects[index] if index < len(self.broker.failing_connects) else None
+        self.started = True
+        if fate == "held":
+            return
         if fate == "refused":
             self.on_connect(self, None, None, ReasonCode(PacketTypes.CONNACK, "Not authorized"), None)
             self.drop()
             return
-        self._connected = True
-        self.on_connect(self, None, None, ReasonCode(PacketTypes.CONNACK, "Success"), None)
+        self.accept()
         if fate == "dropped":
             self.drop()
+        if fate == "closed":
+            self._connected = False
+            self._unreported_close = True
 
     def loop_stop(self) -> None:
+        if self._unreported_close:
+            self._unreported_close = False
+            self.drop()
         self.stopped = True
 
     def disconnect(self, *args: object, **kwargs: object) -> None:
@@ -129,6 +141,10 @@ class _Client:
             return _MessageInfo(False, mqtt.MQTT_ERR_NO_CONN)
         self.published.append((topic, json.loads(payload), qos))
         return _MessageInfo(self.broker.publish_succeeds)
+
+    def accept(self) -> None:
+        self._connected = True
+        self.on_connect(self, None, None, ReasonCode(PacketTypes.CONNACK, "Success"), None)
 
     def drop(self) -> None:
         self._connected = False
@@ -302,11 +318,6 @@ async def test_renews_credentials_before_they_expire() -> None:
     assert broker.clients[0].stopped is True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=SalusCloudConnectionError,
-    reason="open finding, formal/mqtt_lifecycle/cases/finding-publish-on-dropped-connection.cfg",
-)
 async def test_command_waits_for_next_connection_when_accepted_connection_is_already_lost() -> None:
     """Command sent while the broker accepts a connection and drops it at once goes out on the next connection."""
 
@@ -320,11 +331,27 @@ async def test_command_waits_for_next_connection_when_accepted_connection_is_alr
     assert [len(client.published) for client in broker.clients] == [0, 1]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="open finding, formal/mqtt_lifecycle/cases/finding-push-denied-by-stale-subscribing-flag.cfg",
-)
+async def test_command_waits_for_next_connection_when_connection_is_lost_before_the_command_resumes() -> None:
+    """Command woken by a connection that is lost before the command resumes goes out on the next connection."""
+
+    broker = _Broker(failing_connects=("held",))
+    connection = _connection(broker)
+    await connection.async_start(DEVICE_CODES)
+    command = asyncio.create_task(
+        connection.async_publish_shadow(fixtures.RELAY_CODE, "11", {"ep9:sOnOffS:SetOnOff": 1})
+    )
+    await _until(lambda: broker.clients and broker.clients[0].started)
+    await asyncio.sleep(0.05)
+
+    # The loss reaches the event loop after the step that marks the connection as usable, before the command resumes
+    broker.clients[0].accept()
+    asyncio.get_running_loop().call_soon(broker.clients[0].drop)
+    await command
+    await connection.async_stop()
+
+    assert [len(client.published) for client in broker.clients] == [0, 1]
+
+
 async def test_connections_lost_before_subscribing_do_not_disable_push() -> None:
     """Connections that fail before any subscription reached the broker leave push to the next connection."""
 
@@ -337,3 +364,18 @@ async def test_connections_lost_before_subscribing_do_not_disable_push() -> None
     await connection.async_stop()
 
     assert push_states == [True]
+
+
+async def test_subscribe_failing_on_closed_socket_does_not_disable_push() -> None:
+    """Subscription that could not be sent on a closed socket is not held against the connections after it."""
+
+    broker = _Broker(failing_connects=("closed", "refused"))
+    push_states: list[bool] = []
+    connection = _connection(broker, push_states=push_states)
+    await connection.async_start(DEVICE_CODES)
+
+    await _until(lambda: connection.push_available is not None)
+    await connection.async_stop()
+
+    assert push_states == [True]
+    assert [len(client.subscriptions) for client in broker.clients] == [0, 0, 1]
