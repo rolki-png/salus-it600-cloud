@@ -25,22 +25,25 @@ Full-featured Home Assistant integration for controlling Salus iT600 smart home 
   - **Manual** - Hold specific temperature (HoldType = 2)
   - **Away** - Frost protection mode (HoldType = 7)
 - View HVAC action (heating/idle/off)
+- Heating-cooling target range on thermostats that report a cooling setpoint
+- Current humidity on thermostats that report it
 - Extra attributes: hold_type, system_mode, battery_voltage, running_state
 
 #### 🔌 Switches
 - **Full control** - Turn switches/relays on and off
-- RS600, SPE600, SR600 models supported
+- RS600, SPE600, SR600, SP600 models and the Smart_Relay device type supported
 - Examples: boiler control, plug switches, relay switches
 
 #### 📊 Sensors
-- Temperature sensors
-- Humidity sensors
-- Battery voltage sensors
+- Temperature sensors (also from the device shadow)
+- Humidity sensors (also from the device shadow)
+- Battery level sensors
+- Thermostat cooling setpoint, when reported
 
 #### 🚪 Binary Sensors
-- Door/window sensors (WLS models)
-- Motion sensors
-- Occupancy sensors
+- Door/window sensors (WLS, OS600 models), from the IAS zone alarm
+- Motion sensors (MS600)
+- Occupancy sensors, from the occupancy cell
 
 #### 🎯 Buttons (OneTouch Rules)
 - Trigger predefined automation rules from Home Assistant

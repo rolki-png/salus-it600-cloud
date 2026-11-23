@@ -230,6 +230,16 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             },
         )
 
+    async def async_set_temperature_range(self, device_id: str, low: float, high: float) -> None:
+        await self._async_send(
+            [self._require_device(device_id)],
+            {
+                ThermostatCommand.SETPOINT: centi_celsius_from_degrees(low),
+                ThermostatCommand.COOLING_SETPOINT: centi_celsius_from_degrees(high),
+                ThermostatCommand.HOLD: hold_raw_for_preset("manual"),
+            },
+        )
+
     async def async_set_switch(self, device_id: str, turn_on: bool) -> None:
         await self._async_send([self._require_device(device_id)], {wire.desired(wire.ON_OFF): 1 if turn_on else 0})
 

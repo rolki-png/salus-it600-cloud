@@ -189,3 +189,59 @@ async def test_set_temperature_shows_new_target_immediately() -> None:
     ]
     assert entity.target_temperature == 21.5
     assert entity.preset_mode == "manual"
+
+
+def _cooling_shadow() -> dict[str, object]:
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    shadow["state"]["reported"]["11"]["properties"].update(
+        {"ep9:sIT600TH:CoolingSetpoint_x100": 2450, "ep1:sHumiS:MeasuredValue_x100": 5200}
+    )
+    return shadow
+
+
+async def test_heat_only_thermostat_keeps_a_single_target_and_no_humidity() -> None:
+    coordinator, _, _ = await create_coordinator()
+    entity = _entity(coordinator)
+
+    assert not entity.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+    assert entity.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE
+    assert entity.target_temperature_high is None
+    assert entity.current_humidity is None
+
+
+async def test_reported_cooling_setpoint_adds_the_target_range() -> None:
+    api = FakeApi()
+    api.shadows[fixtures.THERMOSTAT_CODE] = _cooling_shadow()
+    coordinator, _, _ = await create_coordinator(api)
+    entity = _entity(coordinator)
+
+    assert entity.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+    assert entity.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE
+    assert (entity.target_temperature_low, entity.target_temperature_high) == (21.0, 24.5)
+    assert entity.target_temperature == 21.0
+    assert entity.current_humidity == 52.0
+    assert entity.hvac_modes == [HVACMode.HEAT, HVACMode.OFF]
+
+
+async def test_set_temperature_range_writes_both_setpoints_and_shows_them() -> None:
+    api = FakeApi()
+    api.shadows[fixtures.THERMOSTAT_CODE] = _cooling_shadow()
+    coordinator, connection, _ = await create_coordinator(api)
+    entity = _entity(coordinator)
+
+    with patch(CALL_LATER):
+        await entity.async_set_temperature(target_temp_low=20.0, target_temp_high=25.5)
+
+    assert connection.published == [
+        (
+            fixtures.THERMOSTAT_CODE,
+            "11",
+            {
+                "ep9:sIT600TH:SetHeatingSetpoint_x100": 2000,
+                "ep9:sIT600TH:SetCoolingSetpoint_x100": 2550,
+                "ep9:sIT600TH:SetHoldType": 2,
+            },
+        )
+    ]
+    assert (entity.target_temperature_low, entity.target_temperature_high) == (20.0, 25.5)
+    assert entity.preset_mode == "manual"

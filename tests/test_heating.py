@@ -23,6 +23,8 @@ SETPOINT = "ep9:sIT600TH:HeatingSetpoint_x100"
 HOLD = "ep9:sIT600TH:HoldType"
 SYSTEM = "ep9:sIT600TH:SystemMode"
 BATTERY = "ep9:sBasicS:BatteryVoltage"
+COOLING = "ep9:sIT600TH:CoolingSetpoint_x100"
+BATTERY_LEVEL = "ep9:sIT600TH:BatteryLevel"
 _DELETE = object()
 
 
@@ -260,3 +262,64 @@ def test_observation_rejects_a_raw_float_temperature() -> None:
 def test_unknown_preset_slug_is_rejected() -> None:
     with pytest.raises(KeyError):
         hold_raw_for_preset("boost")
+
+
+def test_apk_cells_are_unknown_until_reported() -> None:
+    observation = observe(_properties())
+
+    assert observation.cooling_setpoint is None
+    assert observation.ambient_temperature is None
+    assert observation.humidity is None
+    assert observation.battery_level is None
+
+
+def test_cooling_setpoint_reads_like_the_heating_setpoint() -> None:
+    assert observe(_properties(**{COOLING: 2450})).cooling_setpoint.celsius() == 24.5
+    assert observe(_properties(**{COOLING: 0})).cooling_setpoint.celsius() == 0.0
+    assert observe(_properties(**{COOLING: True})).cooling_setpoint is None
+    assert observe(_properties(**{COOLING: None})).cooling_setpoint is None
+
+
+def test_humidity_and_ambient_temperature_come_from_any_endpoint() -> None:
+    observation = observe(
+        _properties(**{"ep1:sHumiS:MeasuredValue_x100": 4550, "ep9:sTempS:MeasuredValue_x100": 2125})
+    )
+
+    assert observation.humidity.percent() == 45.5
+    assert observation.ambient_temperature.celsius() == 21.25
+    assert observe(_properties(**{"ep1:sHumiS:MeasuredValue_x100": 45.5})).humidity is None
+
+
+@pytest.mark.parametrize(("raw", "level"), [(0, 0), (87, 87), (100, 100), (101, None), (255, None), (-1, None), (True, None)])
+def test_battery_level_is_a_percentage_beside_the_voltage(raw: object, level: int | None) -> None:
+    observation = observe(_properties(**{BATTERY_LEVEL: raw}))
+
+    assert observation.battery_level == level
+    assert observation.battery.volts() == 3.0
+
+
+def test_cooling_command_shows_up_in_the_observation() -> None:
+    store = DeviceStateStore(pending_timeout=60, max_age=600)
+    store.update_reported("t", "11", _properties(**{COOLING: 2400}), now=0)
+    store.set_pending("t", {ThermostatCommand.COOLING_SETPOINT: centi_celsius_from_degrees(25.5)}, now=0)
+
+    assert ThermostatCommand.COOLING_SETPOINT == "ep9:sIT600TH:SetCoolingSetpoint_x100"
+    assert observe(store.properties("t", now=1)).cooling_setpoint.celsius() == 25.5
+
+
+def test_observation_rejects_raw_humidity_and_out_of_range_battery() -> None:
+    reference = observe(_properties())
+    common = dict(
+        demand=Demand.IDLE,
+        local_temperature=None,
+        heating_setpoint=None,
+        hold=reference.hold,
+        system_mode=reference.system_mode,
+        battery=None,
+    )
+    with pytest.raises(TypeError):
+        ThermostatObservation(**common, humidity=45.5)
+    with pytest.raises(TypeError):
+        ThermostatObservation(**common, battery_level=101)
+    with pytest.raises(TypeError):
+        ThermostatObservation(**common, cooling_setpoint=24.5)

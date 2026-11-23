@@ -49,6 +49,30 @@ async def test_setup_creates_measurement_sensors_for_thermostats_only() -> None:
     assert all(entity.suggested_display_precision == 1 for entity in entities)
 
 
+async def test_cooling_setpoint_and_ambient_sensors_exist_only_where_reported() -> None:
+    api = FakeApi()
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    shadow["state"]["reported"]["11"]["properties"].update(
+        {"ep9:sIT600TH:CoolingSetpoint_x100": 2450, "ep9:sTempS:MeasuredValue_x100": 2125}
+    )
+    api.shadows[fixtures.THERMOSTAT_CODE] = shadow
+    coordinator, _, _ = await create_coordinator(api)
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+
+    await sensor.async_setup_entry(MagicMock(), entry, add_entities)
+
+    entities = {entity.unique_id: entity for entity in add_entities.call_args.args[0]}
+    assert entities[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")].native_value == 24.5
+    assert entities[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")].name == (
+        "Apartmán A Termostat pokoj Cooling setpoint"
+    )
+    assert entities[_uid(fixtures.THERMOSTAT_ID, "ambient_temperature")].native_value == 21.25
+    assert _uid(fixtures.THERMOSTAT_2_ID, "cooling_setpoint") not in entities
+    assert _uid(fixtures.THERMOSTAT_2_ID, "ambient_temperature") not in entities
+
+
 async def test_native_values_match_reported_temperatures() -> None:
     coordinator, _, _ = await create_coordinator()
 
@@ -101,6 +125,75 @@ async def test_climate_device_skips_the_legacy_temperature_sensor() -> None:
     assert _uid(fixtures.THERMOSTAT_ID, "temperature") not in entities
     assert _uid(fixtures.THERMOSTAT_ID, "local_temperature") in entities
     assert entities[_uid("hall", "temperature")].native_value == 19.5
+
+
+async def _setup_entities(coordinator: object) -> dict[str, object]:
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+    await sensor.async_setup_entry(MagicMock(), entry, add_entities)
+    return {entity.unique_id: entity for entity in add_entities.call_args.args[0]}
+
+
+async def test_unlisted_sensor_gets_temperature_and_humidity_from_its_shadow() -> None:
+    coordinator, _, _ = await create_coordinator()
+    (bath,), _ = parse_gateway_items(
+        fixtures.GATEWAY_ID, [{"id": "bath", "device_code": "bath-code", "name": "Bath", "model": "HS600"}]
+    )
+    coordinator.data["bath"] = SalusDevice(
+        listing=bath,
+        properties={"ep1:sTempS:MeasuredValue_x100": 2350, "ep1:sHumiS:MeasuredValue_x100": 6125},
+        shadow_index="1",
+        fresh=True,
+    )
+
+    entities = await _setup_entities(coordinator)
+
+    temperature = entities[_uid("bath", "temperature")]
+    humidity = entities[_uid("bath", "humidity")]
+    assert (temperature.native_value, temperature.device_class) == (23.5, SensorDeviceClass.TEMPERATURE)
+    assert (humidity.native_value, humidity.device_class) == (61.25, SensorDeviceClass.HUMIDITY)
+    assert humidity.name == "Apartmán A Bath Humidity"
+    assert _uid("bath", "battery") not in entities
+
+
+async def test_shadow_reading_wins_over_the_listing_and_the_listing_is_the_fallback() -> None:
+    coordinator, _, _ = await create_coordinator()
+    (hall,), _ = parse_gateway_items(
+        fixtures.GATEWAY_ID,
+        [{"id": "hall", "device_code": "hall-code", "type": "temperature_sensor", "name": "Hall", "temperature": 19.5, "humidity": 4000}],
+    )
+    coordinator.data["hall"] = SalusDevice(
+        listing=hall, properties={"ep1:sHumiS:MeasuredValue_x100": 4550}, shadow_index="1", fresh=True
+    )
+
+    entities = await _setup_entities(coordinator)
+
+    assert entities[_uid("hall", "humidity")].native_value == 45.5
+    assert entities[_uid("hall", "temperature")].native_value == 19.5
+
+
+async def test_thermostat_battery_level_and_humidity_sensors_exist_only_where_reported() -> None:
+    api = FakeApi()
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    shadow["state"]["reported"]["11"]["properties"].update(
+        {"ep9:sIT600TH:BatteryLevel": 87, "ep1:sHumiS:MeasuredValue_x100": 5200}
+    )
+    api.shadows[fixtures.THERMOSTAT_CODE] = shadow
+    coordinator, _, _ = await create_coordinator(api)
+
+    entities = await _setup_entities(coordinator)
+
+    battery = entities[_uid(fixtures.THERMOSTAT_ID, "battery")]
+    assert (battery.native_value, battery.device_class, battery.native_unit_of_measurement) == (
+        87,
+        SensorDeviceClass.BATTERY,
+        "%",
+    )
+    assert entities[_uid(fixtures.THERMOSTAT_ID, "humidity")].native_value == 52.0
+    assert _uid(fixtures.THERMOSTAT_ID, "temperature") not in entities
+    assert _uid(fixtures.THERMOSTAT_2_ID, "battery") not in entities
+    assert _uid(fixtures.THERMOSTAT_2_ID, "humidity") not in entities
 
 
 def test_listing_readings_in_hundredths_read_as_degrees_and_percent() -> None:

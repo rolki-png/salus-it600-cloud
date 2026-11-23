@@ -174,3 +174,54 @@ async def test_thermostat_listing_with_humidity_and_battery_gets_those_sensors(
     assert hass.states.get(sensor("battery")).state == "80.0"
     assert sensor("temperature") is None
     assert hass.states.get(sensor("local_temperature")).state == "22.0"
+
+
+async def test_cooling_thermostat_takes_a_target_range_through_home_assistant(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, broker: _Broker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    shadow["state"]["reported"]["11"]["properties"].update(
+        {"ep9:sIT600TH:CoolingSetpoint_x100": 2450, "ep1:sHumiS:MeasuredValue_x100": 5200}
+    )
+    monkeypatch.setitem(SHADOWS, fixtures.THERMOSTAT_CODE, shadow)
+    await _set_up(hass, aioclient_mock, fixtures.slider_details())
+    entity_id = _entity_id(hass, "climate", fixtures.THERMOSTAT_ID)
+    state = hass.states.get(entity_id)
+    assert (state.attributes["target_temp_low"], state.attributes["target_temp_high"]) == (21.0, 24.5)
+    assert state.attributes["current_humidity"] == 52.0
+    assert "target_temp_high" not in hass.states.get(_entity_id(hass, "climate", fixtures.THERMOSTAT_2_ID)).attributes
+
+    await hass.services.async_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": entity_id, "target_temp_low": 20.0, "target_temp_high": 25.5},
+        blocking=True,
+    )
+
+    (topic, payload, _) = broker.clients[-1].published[-1]
+    assert topic == f"$aws/things/{fixtures.THERMOSTAT_CODE}/shadow/update"
+    assert payload["state"]["desired"]["11"]["properties"] == {
+        wire.desired(wire.HEATING_SETPOINT_X100): 2000,
+        wire.desired(wire.COOLING_SETPOINT_X100): 2550,
+        wire.desired(wire.HOLD_TYPE): 2,
+    }
+    state = hass.states.get(entity_id)
+    assert (state.attributes["target_temp_low"], state.attributes["target_temp_high"]) == (20.0, 25.5)
+
+
+async def test_shadow_only_readings_reach_home_assistant_as_entities(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, broker: _Broker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    shadow["state"]["reported"]["11"]["properties"].update(
+        {"ep9:sIT600TH:BatteryLevel": 87, "ep1:sOccupS:Occupancy": 1}
+    )
+    monkeypatch.setitem(SHADOWS, fixtures.THERMOSTAT_CODE, shadow)
+    await _set_up(hass, aioclient_mock, fixtures.slider_details())
+    registry = er.async_get(hass)
+    base = f"{DOMAIN}_{fixtures.GATEWAY_ID}_{fixtures.THERMOSTAT_ID}"
+
+    battery = hass.states.get(registry.async_get_entity_id("sensor", DOMAIN, f"{base}_battery"))
+    occupancy = hass.states.get(registry.async_get_entity_id("binary_sensor", DOMAIN, base))
+    assert (battery.state, battery.attributes["device_class"]) == ("87", "battery")
+    assert (occupancy.state, occupancy.attributes["device_class"]) == ("on", "occupancy")
