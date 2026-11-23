@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.climate import (
+    ATTR_TARGET_TEMP_HIGH,
+    ATTR_TARGET_TEMP_LOW,
     ClimateEntity,
     ClimateEntityFeature,
     HVACAction,
@@ -41,19 +43,28 @@ async def async_setup_entry(
     )
 
 
+_FEATURES = (
+    ClimateEntityFeature.TARGET_TEMPERATURE
+    | ClimateEntityFeature.PRESET_MODE
+    | ClimateEntityFeature.TURN_ON
+    | ClimateEntityFeature.TURN_OFF
+)
+
+
 class SalusCloudClimate(SalusEntity, ClimateEntity):
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE
-        | ClimateEntityFeature.PRESET_MODE
-        | ClimateEntityFeature.TURN_ON
-        | ClimateEntityFeature.TURN_OFF
-    )
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_preset_modes = list(PRESET_SLUGS)
     _attr_target_temperature_step = 0.5
     _attr_min_temp = 5.0
     _attr_max_temp = 35.0
+
+    @property
+    def supported_features(self) -> ClimateEntityFeature:
+        observation = observe(self.shadow_properties)
+        if observation is not None and observation.cooling_setpoint is not None:
+            return _FEATURES | ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+        return _FEATURES
 
     @property
     def current_temperature(self) -> float | None:
@@ -66,6 +77,22 @@ class SalusCloudClimate(SalusEntity, ClimateEntity):
         observation = observe(self.shadow_properties)
         sample = None if observation is None else observation.heating_setpoint
         return None if sample is None else sample.celsius()
+
+    @property
+    def target_temperature_low(self) -> float | None:
+        return self.target_temperature
+
+    @property
+    def target_temperature_high(self) -> float | None:
+        observation = observe(self.shadow_properties)
+        sample = None if observation is None else observation.cooling_setpoint
+        return None if sample is None else sample.celsius()
+
+    @property
+    def current_humidity(self) -> float | None:
+        observation = observe(self.shadow_properties)
+        sample = None if observation is None else observation.humidity
+        return None if sample is None else sample.percent()
 
     @property
     def hvac_mode(self) -> HVACMode | None:
@@ -86,7 +113,9 @@ class SalusCloudClimate(SalusEntity, ClimateEntity):
         return None if observation is None else observation.preset_slug()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
+        if (high := kwargs.get(ATTR_TARGET_TEMP_HIGH)) is not None:
+            await self.coordinator.async_set_temperature_range(self._device_id, kwargs[ATTR_TARGET_TEMP_LOW], high)
+        elif (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
             await self.coordinator.async_set_temperature(self._device_id, temperature)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
