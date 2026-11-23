@@ -1,5 +1,3 @@
-"""Switch platform for Salus iT600 Cloud relays and smart plugs."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -20,7 +18,6 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Salus iT600 Cloud relays and smart plugs."""
     coordinator: SalusCloudCoordinator = entry.runtime_data
     async_add_entities(
         [
@@ -32,18 +29,13 @@ async def async_setup_entry(
 
 
 class SalusCloudSwitch(SalusEntity, SwitchEntity):
-    """Salus relay or smart plug."""
-
     @property
     def is_on(self) -> bool | None:
-        """Return whether the relay is on."""
         value = self.shadow_properties.get(wire.ON_OFF)
         return value == 1 if value is not None else None
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the relay on."""
         await self.coordinator.async_set_switch(self._device_id, True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn the relay off."""
         await self.coordinator.async_set_switch(self._device_id, False)

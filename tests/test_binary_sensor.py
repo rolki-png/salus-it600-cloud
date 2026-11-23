@@ -1,5 +1,3 @@
-"""Tests for the thermostat running-state binary sensor."""
-
 from unittest.mock import MagicMock
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
@@ -24,8 +22,6 @@ def _uid(device_id: str) -> str:
 
 
 async def test_setup_creates_one_heat_sensor_per_thermostat() -> None:
-    """Running state is its own entity. It does not use the on/off fallback of other binary sensors."""
-
     coordinator, _, _ = await create_coordinator()
     entry = MagicMock()
     entry.runtime_data = coordinator
@@ -53,8 +49,6 @@ async def test_idle_demand_is_off() -> None:
 
 
 async def test_missing_running_state_is_unknown_not_off() -> None:
-    """A fresh thermostat with no RunningState key is unknown, not off and not unavailable."""
-
     api = FakeApi()
     shadow = fixtures.thermostat_shadow(hold_type=0)
     del shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"]
@@ -77,8 +71,6 @@ async def test_integer_one_is_on() -> None:
 
 
 async def test_bool_running_state_is_unknown() -> None:
-    """True must not become on, because True == 1."""
-
     api = FakeApi()
     shadow = fixtures.thermostat_shadow(hold_type=2)
     shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"] = True
@@ -99,8 +91,6 @@ async def test_unavailable_follows_freshness_not_the_key() -> None:
 
 
 async def test_calling_during_standby_is_on_while_climate_action_is_off() -> None:
-    """Frost protection can still be calling for heat. Climate reports that as off."""
-
     api = FakeApi()
     shadow = fixtures.thermostat_shadow(hold_type=7)
     shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"] = 1

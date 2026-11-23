@@ -1,5 +1,3 @@
-"""Thermostat observation parsed from shadow properties and from raw cells."""
-
 import pytest
 
 from custom_components.salus_it600_cloud.state import DeviceStateStore
@@ -46,14 +44,10 @@ def _properties(**overrides: object) -> dict[str, object]:
 
 
 def test_empty_property_map_is_not_an_observation() -> None:
-    """An empty shadow is the same as no reported state, not a zeroed thermostat."""
-
     assert observe({}) is None
 
 
 def test_non_empty_map_with_no_thermostat_keys_is_unreported() -> None:
-    """A relay-only property still produces an observation whose demand was not reported."""
-
     observation = observe({"ep9:sOnOffS:OnOff": 1})
 
     assert observation is not None
@@ -80,14 +74,10 @@ def test_non_empty_map_with_no_thermostat_keys_is_unreported() -> None:
     ],
 )
 def test_running_cell_keeps_missing_idle_and_garbage_apart(present: bool, value: object, demand: Demand) -> None:
-    """RunningState 0 is idle, 1 is heating, and a bool is not heating just because True == 1."""
-
     assert decode_running_cell(value, present=present) is demand
 
 
 def test_observe_uses_the_running_cell_decoder() -> None:
-    """A present bool on the shadow is unreadable, not idle and not heating."""
-
     assert observe(_properties(**{RUNNING: True})).demand is Demand.UNREADABLE
     assert observe(_properties(**{RUNNING: _DELETE})).demand is Demand.UNREPORTED
     assert observe(_properties(**{RUNNING: 0})).demand is Demand.IDLE
@@ -108,8 +98,6 @@ def test_demand_is_on_is_unknown_unless_the_cell_was_an_int(demand: Demand, is_o
 
 
 def test_unreported_and_unreadable_demand_stay_unknown_in_standby() -> None:
-    """Standby does not turn a missing or garbage RunningState into off or idle."""
-
     missing = observe(_properties(**{HOLD: 7, RUNNING: _DELETE}))
     garbage = observe(_properties(**{HOLD: 7, SYSTEM: 0, RUNNING: True}))
     null_cell = observe(_properties(**{RUNNING: None}))
@@ -122,8 +110,6 @@ def test_unreported_and_unreadable_demand_stay_unknown_in_standby() -> None:
 
 
 def test_known_demand_in_standby_or_system_off_is_off_even_while_calling() -> None:
-    """Frost protection and system mode 0 report off once demand itself was an int."""
-
     standby_idle = observe(_properties(**{HOLD: 7, RUNNING: 0}))
     standby_calling = observe(_properties(**{HOLD: 7, RUNNING: 1}))
     system_off_calling = observe(_properties(**{HOLD: 2, SYSTEM: 0, RUNNING: 1}))
@@ -144,8 +130,6 @@ def test_heat_mode_action_follows_integer_demand() -> None:
 
 
 def test_zero_temperature_is_a_real_sample_and_garbage_is_not() -> None:
-    """0 hundredths is 0.0°C. A missing key and a bool are both no sample."""
-
     assert decode_x100_cell(0, present=True).celsius() == 0.0
     assert decode_x100_cell(2250, present=True).celsius() == 22.5
     assert decode_x100_cell(0, present=False) is None
@@ -160,15 +144,11 @@ def test_zero_temperature_is_a_real_sample_and_garbage_is_not() -> None:
 
 
 def test_scale_pair_round_trips_setpoints() -> None:
-    """The command scale and the read scale are the same factor."""
-
     for degrees in (0.0, 5.0, 21.5, 22.5, 35.0):
         assert CentiCelsius(centi_celsius_from_degrees(degrees)).celsius() == degrees
 
 
 def test_commands_show_up_in_the_observation() -> None:
-    """A commanded value is what observe reads back before the device confirms it."""
-
     store = DeviceStateStore(pending_timeout=60, max_age=600)
     store.update_reported("t", "11", {}, now=0)
     store.set_pending(
@@ -238,8 +218,6 @@ def test_battery_tenths_become_volts() -> None:
 
 
 def test_history_cells_do_not_need_wire_keys() -> None:
-    """Cube rows pass cells straight in. They do not rebuild an ep9 property map."""
-
     observation = observation_from_cells(
         running=1,
         running_present=True,

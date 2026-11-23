@@ -1,5 +1,3 @@
-"""Test helpers: fake Salus Cloud API, fake MQTT connection and coordinator factory."""
-
 import asyncio
 from typing import Any
 from unittest.mock import MagicMock
@@ -19,8 +17,6 @@ CALL_LATER = "custom_components.salus_it600_cloud.coordinator.async_call_later"
 
 
 def metadata() -> SalusMetadata:
-    """Return metadata of the fixture gateway."""
-
     devices, rules = parse_gateway_items(fixtures.GATEWAY_ID, fixtures.slider_details()["data"]["items"])
     return SalusMetadata(
         gateways=[GatewayInfo(id=fixtures.GATEWAY_ID, name=fixtures.GATEWAY_NAME, device_code=fixtures.GATEWAY_CODE)],
@@ -30,8 +26,6 @@ def metadata() -> SalusMetadata:
 
 
 class FakeApi:
-    """Salus Cloud API returning fixture data."""
-
     def __init__(self) -> None:
         self.metadata_calls = 0
         self.metadata_error: Exception | None = None
@@ -60,8 +54,6 @@ class FakeApi:
 
 
 class FakeConnection:
-    """MQTT connection recording published shadow updates."""
-
     def __init__(self, fail_codes: set[str] | None = None) -> None:
         self.fail_codes = fail_codes or set()
         self.published: list[tuple[str, str, dict[str, Any]]] = []
@@ -91,8 +83,6 @@ class FakeConnection:
 async def create_coordinator(
     api: FakeApi | None = None, *, sync: bool = False, connection: FakeConnection | None = None
 ) -> tuple[SalusCloudCoordinator, FakeConnection, list[float]]:
-    """Return coordinator after its first refresh with started (fake) MQTT connection and its clock."""
-
     hass = MagicMock()
     hass.loop = asyncio.get_running_loop()
     entry = MagicMock()

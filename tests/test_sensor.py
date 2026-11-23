@@ -1,5 +1,3 @@
-"""Tests for thermostat temperature sensors."""
-
 from unittest.mock import MagicMock, patch
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -29,8 +27,6 @@ def _uid(device_id: str, slug: str) -> str:
 
 
 async def test_setup_creates_measurement_sensors_for_thermostats_only() -> None:
-    """Each thermostat gets a temperature and a setpoint sensor. Relays do not."""
-
     coordinator, _, _ = await create_coordinator()
     entry = MagicMock()
     entry.runtime_data = coordinator
@@ -52,8 +48,6 @@ async def test_setup_creates_measurement_sensors_for_thermostats_only() -> None:
 
 
 async def test_native_values_match_reported_temperatures() -> None:
-    """The sensors show the same degrees the climate entity shows."""
-
     coordinator, _, _ = await create_coordinator()
 
     assert _entity(coordinator, "local_temperature").native_value == 22.0
@@ -63,8 +57,6 @@ async def test_native_values_match_reported_temperatures() -> None:
 
 
 async def test_missing_temperature_is_unknown_and_the_entity_still_exists() -> None:
-    """A thermostat without LocalTemperature still has the sensor, with an unknown value."""
-
     api = FakeApi()
     shadow = fixtures.thermostat_shadow(hold_type=0)
     del shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:LocalTemperature_x100"]
@@ -77,8 +69,6 @@ async def test_missing_temperature_is_unknown_and_the_entity_still_exists() -> N
 
 
 async def test_set_temperature_shows_on_the_setpoint_sensor() -> None:
-    """The setpoint sensor follows the optimistic target, and the room temperature does not."""
-
     coordinator, _, _ = await create_coordinator()
 
     with patch(CALL_LATER):
@@ -89,8 +79,6 @@ async def test_set_temperature_shows_on_the_setpoint_sensor() -> None:
 
 
 async def test_climate_device_skips_the_legacy_temperature_sensor() -> None:
-    """A thermostat that also has a temperature field does not grow a second scaled sensor."""
-
     coordinator, _, _ = await create_coordinator()
     coordinator.data[fixtures.THERMOSTAT_ID]["temperature"] = 2200
     (hall,), _ = parse_gateway_items(

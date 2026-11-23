@@ -1,5 +1,3 @@
-"""Tests for Salus relay entities."""
-
 from unittest.mock import MagicMock, patch
 
 from custom_components.salus_it600_cloud import switch
@@ -10,8 +8,6 @@ from .helpers import CALL_LATER, FakeApi, create_coordinator
 
 
 async def test_setup_creates_relays_only() -> None:
-    """Switch entities are created for relays and plugs, not for thermostats."""
-
     coordinator, _, _ = await create_coordinator()
     entry = MagicMock()
     entry.runtime_data = coordinator
@@ -25,8 +21,6 @@ async def test_setup_creates_relays_only() -> None:
 
 
 async def test_relay_state() -> None:
-    """Relay state comes from reported on/off property."""
-
     api = FakeApi()
     api.shadows[fixtures.RELAY_CODE] = fixtures.relay_shadow(1)
     coordinator, _, _ = await create_coordinator(api)
@@ -35,8 +29,6 @@ async def test_relay_state() -> None:
 
 
 async def test_turn_on_relay_shows_state_immediately() -> None:
-    """Relay command targets only the relay (never synchronized) and its state is shown right away."""
-
     coordinator, connection, _ = await create_coordinator(sync=True)
     entity = SalusCloudSwitch(coordinator, fixtures.RELAY_ID, coordinator.data[fixtures.RELAY_ID])
     entity.hass = MagicMock()

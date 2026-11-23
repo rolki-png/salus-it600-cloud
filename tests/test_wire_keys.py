@@ -1,8 +1,10 @@
-"""Shadow property names are spelt only in wire.py."""
-
 import ast
 import re
 from pathlib import Path
+
+import pytest
+
+from custom_components.salus_it600_cloud import wire
 
 PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "salus_it600_cloud"
 WIRE = "ep9:sIT600TH:"
@@ -37,3 +39,8 @@ def test_live_poll_does_not_import_cube() -> None:
         text = (PACKAGE / name).read_text()
         assert "from .cube" not in text
         assert "import cube" not in text
+
+
+def test_catalog_rejects_the_v1_0_2_running_state_typo() -> None:
+    with pytest.raises(ValueError):
+        wire._reported("ep9:sIT600_TH:RunningState")

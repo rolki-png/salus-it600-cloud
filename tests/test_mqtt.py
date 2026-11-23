@@ -1,5 +1,3 @@
-"""Tests for AWS IoT MQTT connection used for device commands and state push."""
-
 import asyncio
 import json
 import re
@@ -42,8 +40,6 @@ class _Message:
 
 
 class _Broker:
-    """Fake AWS IoT broker shared by all clients created during a test."""
-
     def __init__(
         self,
         *,
@@ -63,8 +59,6 @@ class _Broker:
 
 
 class _Client:
-    """Fake paho client calling callbacks with paho 2 (callback API version 2) signatures."""
-
     def __init__(self, broker: _Broker, client_id: str) -> None:
         self.broker = broker
         self.client_id = client_id
@@ -166,8 +160,6 @@ async def _until(predicate: Callable[[], object], timeout: float = 3) -> None:
 
 
 async def test_publish_sends_desired_properties_to_device_shadow() -> None:
-    """Command sent right after start waits for the connection and updates desired state of the device."""
-
     broker = _Broker()
     connection = _connection(broker)
     await connection.async_start(DEVICE_CODES)
@@ -189,8 +181,6 @@ async def test_publish_sends_desired_properties_to_device_shadow() -> None:
 
 
 async def test_unconfirmed_publish_raises_connection_error() -> None:
-    """Command the broker does not confirm in time is reported as failed."""
-
     broker = _Broker(publish_succeeds=False)
     connection = _connection(broker)
     await connection.async_start(DEVICE_CODES)
@@ -202,8 +192,6 @@ async def test_unconfirmed_publish_raises_connection_error() -> None:
 
 
 async def test_subscribes_to_shadow_documents_in_batches_of_eight() -> None:
-    """Shadow documents of all devices are subscribed with at most 8 topics per request (AWS IoT limit)."""
-
     codes = [f"{fixtures.GATEWAY_CODE}-SR600-{index:016X}" for index in range(11)]
     broker = _Broker()
     push_states: list[bool] = []
@@ -220,8 +208,6 @@ async def test_subscribes_to_shadow_documents_in_batches_of_eight() -> None:
 
 
 async def test_shadow_document_push_is_delivered() -> None:
-    """Current shadow document pushed by the broker is handed over with its device code."""
-
     documents: list[tuple[str, dict[str, Any]]] = []
     broker = _Broker()
     connection = _connection(broker, documents=documents)
@@ -240,8 +226,6 @@ async def test_shadow_document_push_is_delivered() -> None:
 
 
 async def test_denied_subscription_keeps_connection_for_commands() -> None:
-    """Without permission to subscribe, push is reported unavailable and commands still work."""
-
     broker = _Broker(deny_subscribe=True)
     push_states: list[bool] = []
     connection = _connection(broker, push_states=push_states)
@@ -259,8 +243,6 @@ async def test_denied_subscription_keeps_connection_for_commands() -> None:
 
 
 async def test_disconnect_on_subscribe_disables_push_and_reconnects() -> None:
-    """Broker dropping the connection because of the subscription is not repeated on reconnect."""
-
     broker = _Broker(disconnect_on_subscribe=True)
     push_states: list[bool] = []
     connection = _connection(broker, push_states=push_states)
@@ -277,8 +259,6 @@ async def test_disconnect_on_subscribe_disables_push_and_reconnects() -> None:
 
 
 async def test_unexpected_disconnect_reconnects_with_new_client() -> None:
-    """Lost connection is replaced by a new client and the old one is stopped."""
-
     broker = _Broker()
     connection = _connection(broker)
     await connection.async_start(DEVICE_CODES)
@@ -292,8 +272,6 @@ async def test_unexpected_disconnect_reconnects_with_new_client() -> None:
 
 
 async def test_renews_credentials_before_they_expire() -> None:
-    """Connection is re-established with new AWS credentials before the current ones expire."""
-
     credentials = _Credentials(lifetime=timedelta(minutes=5, seconds=0.3))
     broker = _Broker()
     connection = _connection(broker, credentials=credentials)

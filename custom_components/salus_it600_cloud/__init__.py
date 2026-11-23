@@ -1,5 +1,3 @@
-"""The Salus iT600 Cloud integration."""
-
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
@@ -25,7 +23,6 @@ type SalusConfigEntry = ConfigEntry[SalusCloudCoordinator]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SalusConfigEntry) -> bool:
-    """Set up Salus iT600 Cloud from a config entry."""
     api = SalusCloudApi(entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD], session=async_get_clientsession(hass))
     try:
         await api.authenticate()
@@ -37,7 +34,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SalusConfigEntry) -> boo
     coordinator = SalusCloudCoordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
 
-    # Gateways are registered first so devices can refer to them
     device_registry = dr.async_get(hass)
     for gateway in coordinator.gateways:
         device = device_registry.async_get_or_create(
@@ -56,5 +52,4 @@ async def async_setup_entry(hass: HomeAssistant, entry: SalusConfigEntry) -> boo
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: SalusConfigEntry) -> bool:
-    """Unload a config entry (the coordinator stops its MQTT connection when the entry unloads)."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

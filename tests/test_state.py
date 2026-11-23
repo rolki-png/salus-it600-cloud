@@ -1,5 +1,3 @@
-"""Tests for device state tracking."""
-
 from custom_components.salus_it600_cloud.state import DeviceStateStore, extract_reported
 
 THERMOSTAT = "SAL3AG1GW-001E5E000002-SQ610RFNH-001E5E0000000E05"
@@ -14,8 +12,6 @@ def _store() -> DeviceStateStore:
 
 
 def test_extract_reported_returns_index_and_properties() -> None:
-    """Reported properties are nested under the device index of the shadow document."""
-
     shadow = {
         "state": {
             "desired": {"11": {"properties": {"ep9:sIT600TH:SetHoldType": 7}}},
@@ -29,23 +25,17 @@ def test_extract_reported_returns_index_and_properties() -> None:
 
 
 def test_extract_reported_of_gateway_shadow() -> None:
-    """Gateway shadow uses its own device index."""
-
     shadow = {"state": {"reported": {"000000000001": {"properties": {"ep0:sRule:TriggerRule": ""}}}}}
 
     assert extract_reported(shadow) == ("000000000001", {"ep0:sRule:TriggerRule": ""})
 
 
 def test_extract_reported_without_reported_state() -> None:
-    """Shadow without reported device properties yields nothing."""
-
     assert extract_reported({"state": {"desired": {"11": {"properties": {HOLD: 0}}}}}) is None
     assert extract_reported({}) is None
 
 
 def test_reported_properties_are_merged() -> None:
-    """Later reports update changed properties and keep the others."""
-
     store = _store()
     store.update_reported(THERMOSTAT, "11", {HOLD: 7, TEMPERATURE: 2200}, now=0)
     store.update_reported(THERMOSTAT, "11", {TEMPERATURE: 2150}, now=10)
@@ -55,8 +45,6 @@ def test_reported_properties_are_merged() -> None:
 
 
 def test_pending_change_hides_stale_report() -> None:
-    """A report sent before the device applied a command does not revert the commanded state."""
-
     store = _store()
     store.update_reported(THERMOSTAT, "11", {HOLD: 0, SETPOINT: 2100}, now=0)
     store.set_pending(THERMOSTAT, {"ep9:sIT600TH:SetHoldType": 7}, now=1)
@@ -67,8 +55,6 @@ def test_pending_change_hides_stale_report() -> None:
 
 
 def test_confirmed_pending_change_no_longer_overrides_reports() -> None:
-    """Once the device reports the commanded value, later changes made elsewhere are shown."""
-
     store = _store()
     store.update_reported(THERMOSTAT, "11", {HOLD: 0}, now=0)
     store.set_pending(THERMOSTAT, {"ep9:sIT600TH:SetHoldType": 7}, now=1)
@@ -80,8 +66,6 @@ def test_confirmed_pending_change_no_longer_overrides_reports() -> None:
 
 
 def test_pending_change_expires() -> None:
-    """A command the device never applies stops overriding reports after the pending timeout."""
-
     store = _store()
     store.update_reported(THERMOSTAT, "11", {HOLD: 0}, now=0)
     store.set_pending(THERMOSTAT, {"ep9:sIT600TH:SetHoldType": 7}, now=1)
@@ -91,8 +75,6 @@ def test_pending_change_expires() -> None:
 
 
 def test_pending_setpoint_and_switch_use_reported_property_names() -> None:
-    """Commanded setpoint and relay state are shown under the properties the entities read."""
-
     store = _store()
     store.update_reported(THERMOSTAT, "11", {SETPOINT: 2100}, now=0)
     store.update_reported(RELAY, "11", {"ep9:sOnOffS:OnOff": 0}, now=0)
@@ -105,8 +87,6 @@ def test_pending_setpoint_and_switch_use_reported_property_names() -> None:
 
 
 def test_freshness_of_device_data() -> None:
-    """Device data counts as fresh until max age passes since the last report."""
-
     store = _store()
     store.update_reported(THERMOSTAT, "11", {HOLD: 7}, now=100)
 
@@ -116,8 +96,6 @@ def test_freshness_of_device_data() -> None:
 
 
 def test_pending_change_does_not_refresh_data() -> None:
-    """Sending a command does not make stale device data look fresh."""
-
     store = _store()
     store.update_reported(THERMOSTAT, "11", {HOLD: 0}, now=0)
     store.set_pending(THERMOSTAT, {"ep9:sIT600TH:SetHoldType": 7}, now=650)

@@ -1,5 +1,3 @@
-"""Tests for Salus thermostat entities."""
-
 from collections.abc import Awaitable, Callable
 from unittest.mock import MagicMock, patch
 
@@ -21,8 +19,6 @@ def _entity(coordinator: object, device_id: str = fixtures.THERMOSTAT_ID) -> Sal
 
 
 async def test_setup_creates_thermostats_only() -> None:
-    """Climate entities are created for thermostats, not for relays or the gateway."""
-
     coordinator, _, _ = await create_coordinator()
     entry = MagicMock()
     entry.runtime_data = coordinator
@@ -37,16 +33,12 @@ async def test_setup_creates_thermostats_only() -> None:
 
 
 async def test_entity_name_is_unchanged() -> None:
-    """Existing names (and therefore entity ids) of thermostats stay the same."""
-
     coordinator, _, _ = await create_coordinator()
 
     assert _entity(coordinator).name == "Apartmán A Termostat pokoj"
 
 
 async def test_schedule_mode_state() -> None:
-    """Thermostat following its schedule is heating with schedule preset."""
-
     api = FakeApi()
     api.shadows[fixtures.THERMOSTAT_CODE] = fixtures.thermostat_shadow(
         hold_type=0, temperature_x100=2250, setpoint_x100=2100
@@ -59,8 +51,6 @@ async def test_schedule_mode_state() -> None:
 
 
 async def test_manual_mode_actively_heating() -> None:
-    """Running state reports active heating."""
-
     api = FakeApi()
     shadow = fixtures.thermostat_shadow(hold_type=2)
     shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"] = 1
@@ -72,8 +62,6 @@ async def test_manual_mode_actively_heating() -> None:
 
 
 async def test_standby_mode_state() -> None:
-    """Thermostat in stand-by (frost protection) is off when demand was reported."""
-
     api = FakeApi()
     api.shadows[fixtures.THERMOSTAT_CODE] = fixtures.thermostat_shadow(hold_type=7)
     coordinator, _, _ = await create_coordinator(api)
@@ -83,8 +71,6 @@ async def test_standby_mode_state() -> None:
 
 
 async def test_missing_running_state_stays_unknown_in_heat() -> None:
-    """Heat mode with no RunningState is unknown, not idle."""
-
     api = FakeApi()
     shadow = fixtures.thermostat_shadow(hold_type=0)
     del shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"]
@@ -98,8 +84,6 @@ async def test_missing_running_state_stays_unknown_in_heat() -> None:
 
 
 async def test_standby_without_running_state_is_not_off_action() -> None:
-    """Stand-by does not hide a missing RunningState behind HVACAction.OFF."""
-
     api = FakeApi()
     shadow = fixtures.thermostat_shadow(hold_type=7)
     del shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"]
@@ -114,8 +98,6 @@ async def test_standby_without_running_state_is_not_off_action() -> None:
 
 @pytest.mark.parametrize("running", [True, False, None, 1.0])
 async def test_unreadable_running_state_is_unknown_action(running: object) -> None:
-    """A present non-integer RunningState is unknown, including bool True which equals 1."""
-
     api = FakeApi()
     shadow = fixtures.thermostat_shadow(hold_type=2)
     shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"] = running
@@ -129,8 +111,6 @@ async def test_unreadable_running_state_is_unknown_action(running: object) -> No
 
 
 async def test_attributes_follow_the_observation() -> None:
-    """Cards keep the same attribute names, filled from the observation."""
-
     coordinator, _, _ = await create_coordinator()
 
     assert _entity(coordinator).extra_state_attributes == {
@@ -142,8 +122,6 @@ async def test_attributes_follow_the_observation() -> None:
 
 
 async def test_thermostat_without_reported_state_is_unavailable() -> None:
-    """A thermostat without state data is unavailable instead of showing made-up heat/manual values."""
-
     api = FakeApi()
     del api.shadows[fixtures.THERMOSTAT_CODE]
     coordinator, _, _ = await create_coordinator(api)
@@ -168,8 +146,6 @@ async def test_thermostat_without_reported_state_is_unavailable() -> None:
 async def test_mode_commands_set_hold_type(
     action: Callable[[SalusCloudClimate], Awaitable[None]], hold_type: int
 ) -> None:
-    """Mode changes are sent as hold type of the thermostat."""
-
     coordinator, connection, _ = await create_coordinator()
     entity = _entity(coordinator)
 
@@ -180,8 +156,6 @@ async def test_mode_commands_set_hold_type(
 
 
 async def test_turning_off_one_thermostat_turns_off_all_with_sync() -> None:
-    """With synchronization, turning off one thermostat turns off every thermostat of the apartment at once."""
-
     coordinator, connection, _ = await create_coordinator(sync=True)
     entity = _entity(coordinator)
 
@@ -196,8 +170,6 @@ async def test_turning_off_one_thermostat_turns_off_all_with_sync() -> None:
 
 
 async def test_set_temperature_shows_new_target_immediately() -> None:
-    """New target temperature is shown right after the command, before the device reports it."""
-
     coordinator, connection, _ = await create_coordinator()
     entity = _entity(coordinator)
 

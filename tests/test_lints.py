@@ -1,5 +1,3 @@
-"""Source lints. Each failure message names the fix."""
-
 import ast
 from pathlib import Path
 
@@ -34,7 +32,6 @@ def test_no_method_call_on_a_defaulted_get() -> None:
 
 
 def paho_thread_offences(source: str) -> tuple[set[str], list[str]]:
-    """Callbacks wired to paho, and lines where they touch more than the loop handoff."""
     tree = ast.parse(source)
     wired = {
         target.attr: node.value

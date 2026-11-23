@@ -1,5 +1,3 @@
-"""Tests for Salus Cloud data coordinator."""
-
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -20,8 +18,6 @@ TEMPERATURE = "ep9:sIT600TH:LocalTemperature_x100"
 
 
 async def test_refresh_combines_device_list_with_reported_states() -> None:
-    """Each device gets its reported properties, shadow index and data freshness."""
-
     coordinator, _, _ = await create_coordinator()
 
     assert list(coordinator.data) == [
@@ -39,8 +35,6 @@ async def test_refresh_combines_device_list_with_reported_states() -> None:
 
 
 async def test_connection_uses_gateway_client_id_and_all_devices() -> None:
-    """MQTT connection is identified by the gateway device code and covers all devices."""
-
     api = FakeApi()
     _, connection, _ = await create_coordinator(api)
 
@@ -55,8 +49,6 @@ async def test_connection_uses_gateway_client_id_and_all_devices() -> None:
 
 
 async def test_device_list_is_refreshed_only_every_fifteen_minutes() -> None:
-    """Polling fetches only device states; gateways and devices are re-read every 15 minutes."""
-
     api = FakeApi()
     coordinator, _, clock = await create_coordinator(api)
 
@@ -70,8 +62,6 @@ async def test_device_list_is_refreshed_only_every_fifteen_minutes() -> None:
 
 
 async def test_device_missing_in_poll_keeps_last_known_state() -> None:
-    """A device absent from the shadows response keeps its last reported state instead of empty values."""
-
     api = FakeApi()
     coordinator, _, clock = await create_coordinator(api)
     api.shadows = {fixtures.RELAY_CODE: fixtures.relay_shadow(1)}
@@ -86,8 +76,6 @@ async def test_device_missing_in_poll_keeps_last_known_state() -> None:
 
 
 async def test_failed_poll_keeps_recent_states() -> None:
-    """A single failed poll does not make entities unavailable or change their state."""
-
     api = FakeApi()
     coordinator, _, clock = await create_coordinator(api)
     api.shadows = SalusCloudConnectionError("timeout")
@@ -100,8 +88,6 @@ async def test_failed_poll_keeps_recent_states() -> None:
 
 
 async def test_poll_failing_for_ten_minutes_fails_update() -> None:
-    """When no device reported for more than 10 minutes, the update fails and entities become unavailable."""
-
     api = FakeApi()
     coordinator, _, clock = await create_coordinator(api)
     api.shadows = SalusCloudConnectionError("timeout")
@@ -112,8 +98,6 @@ async def test_poll_failing_for_ten_minutes_fails_update() -> None:
 
 
 async def test_failed_device_list_refresh_uses_previous_list() -> None:
-    """Failing to re-read the device list does not stop polling device states."""
-
     api = FakeApi()
     coordinator, _, clock = await create_coordinator(api)
     api.metadata_error = SalusCloudConnectionError("timeout")
@@ -126,8 +110,6 @@ async def test_failed_device_list_refresh_uses_previous_list() -> None:
 
 
 async def test_rejected_credentials_start_reauthentication() -> None:
-    """Rejected credentials during polling ask the user to log in again."""
-
     api = FakeApi()
     coordinator, _, _ = await create_coordinator(api)
     api.shadows = SalusCloudAuthenticationError("rejected")
@@ -137,8 +119,6 @@ async def test_rejected_credentials_start_reauthentication() -> None:
 
 
 async def test_mode_change_without_sync_targets_selected_thermostat() -> None:
-    """Without synchronization only the selected thermostat changes mode and shows it immediately."""
-
     coordinator, connection, _ = await create_coordinator(sync=False)
 
     with patch(CALL_LATER):
@@ -150,8 +130,6 @@ async def test_mode_change_without_sync_targets_selected_thermostat() -> None:
 
 
 async def test_mode_change_with_sync_targets_all_thermostats_of_gateway() -> None:
-    """With synchronization the mode goes to every thermostat of the gateway, never to relays or the gateway."""
-
     coordinator, connection, _ = await create_coordinator(sync=True)
 
     with patch(CALL_LATER):
@@ -166,8 +144,6 @@ async def test_mode_change_with_sync_targets_all_thermostats_of_gateway() -> Non
 
 
 async def test_temperature_change_is_not_synchronized() -> None:
-    """Setting temperature affects only the selected thermostat even with synchronization on."""
-
     coordinator, connection, _ = await create_coordinator(sync=True)
 
     with patch(CALL_LATER):
@@ -188,8 +164,6 @@ async def test_temperature_change_is_not_synchronized() -> None:
 
 
 async def test_partially_failed_sync_reports_failed_thermostat() -> None:
-    """Thermostats that accepted the mode show it, the failed one keeps its state and is named in the error."""
-
     connection = FakeConnection(fail_codes={fixtures.THERMOSTAT_2_CODE})
     coordinator, _, _ = await create_coordinator(sync=True, connection=connection)
 
@@ -201,8 +175,6 @@ async def test_partially_failed_sync_reports_failed_thermostat() -> None:
 
 
 async def test_poll_before_device_applies_command_does_not_revert_state() -> None:
-    """A poll returning the old state right after a command does not flip the entity back."""
-
     api = FakeApi()
     coordinator, _, clock = await create_coordinator(api)
     with patch(CALL_LATER):
@@ -215,8 +187,6 @@ async def test_poll_before_device_applies_command_does_not_revert_state() -> Non
 
 
 async def test_command_schedules_confirmation_refresh_only_without_push() -> None:
-    """Without pushed state changes a command is confirmed by a refresh 10 seconds later."""
-
     coordinator, connection, _ = await create_coordinator()
 
     with patch(CALL_LATER) as call_later:
@@ -230,8 +200,6 @@ async def test_command_schedules_confirmation_refresh_only_without_push() -> Non
 
 
 async def test_pushed_shadow_document_updates_state() -> None:
-    """State pushed over MQTT is shown immediately and counts as fresh data."""
-
     coordinator, connection, clock = await create_coordinator()
     clock[0] = 700
 
@@ -246,8 +214,6 @@ async def test_pushed_shadow_document_updates_state() -> None:
 
 
 async def test_push_availability_adjusts_polling_interval() -> None:
-    """Polling runs every 5 minutes as a safety net with push and every 30 seconds without it."""
-
     coordinator, connection, _ = await create_coordinator()
 
     connection.kwargs["on_push_available"](True)
@@ -258,8 +224,6 @@ async def test_push_availability_adjusts_polling_interval() -> None:
 
 
 async def test_onetouch_rule_is_triggered_through_gateway_shadow() -> None:
-    """OneTouch rule is started by setting the trigger key on the gateway shadow."""
-
     coordinator, connection, _ = await create_coordinator()
 
     await coordinator.async_trigger_rule(fixtures.GATEWAY_ID, fixtures.RULE_TRIGGER_KEY)
@@ -270,8 +234,6 @@ async def test_onetouch_rule_is_triggered_through_gateway_shadow() -> None:
 
 
 async def test_shutdown_stops_connection() -> None:
-    """Unloading the integration closes the MQTT connection."""
-
     coordinator, connection, _ = await create_coordinator()
 
     await coordinator.async_shutdown()

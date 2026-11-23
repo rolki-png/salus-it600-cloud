@@ -1,5 +1,3 @@
-"""AWS IoT MQTT connection for Salus device shadows: sends commands and receives state changes."""
-
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +20,7 @@ from .const import AWS_IOT_ENDPOINT, AWS_REGION
 
 _LOGGER = logging.getLogger(__name__)
 
-# AWS IoT accepts at most 8 topic filters in one SUBSCRIBE request
+# AWS IoT quota, not adjustable: https://docs.aws.amazon.com/general/latest/gr/iot-core.html#message-broker-limits
 SUBSCRIBE_BATCH_SIZE = 8
 CONNECT_TIMEOUT = 15
 KEEPALIVE = 60
@@ -34,9 +32,9 @@ def _sign(key: bytes, msg: str) -> bytes:
 
 
 def create_signed_websocket_url(host: str, region: str, credentials: IotCredentials, now: datetime) -> str:
-    """Return AWS SigV4 presigned WebSocket URL for AWS IoT.
+    """AWS IoT does not sign X-Amz-Security-Token, so it goes after the signature.
 
-    The session token is appended after the signature because AWS IoT does not expect it in the signed query.
+    See omit_session_token in aws-iot-device-sdk-python-v2 awsiot/mqtt_connection_builder.py.
     """
     amz_date = now.strftime("%Y%m%dT%H%M%SZ")
     date_stamp = now.strftime("%Y%m%d")
@@ -78,8 +76,6 @@ def _create_client(client_id: str) -> mqtt.Client:
 
 
 class SalusMqttConnection:
-    """Keeps an AWS IoT MQTT connection alive, publishes shadow updates and delivers shadow documents."""
-
     def __init__(
         self,
         *,
@@ -92,12 +88,7 @@ class SalusMqttConnection:
         renew_margin: timedelta = timedelta(minutes=5),
         publish_timeout: float = 10,
     ) -> None:
-        """Initialize the connection.
-
-        client_id_prefix: gateway device code, AWS IoT policy requires client ids to start with it
-        on_shadow_document: called in the event loop with device code and current shadow document
-        on_push_available: called in the event loop when receiving shadow documents becomes (un)available
-        """
+        """client_id_prefix: gateway device code, AWS IoT policy requires client ids to start with it."""
         self._credentials_provider = credentials_provider
         self._client_id_prefix = client_id_prefix
         self._on_shadow_document = on_shadow_document
@@ -122,21 +113,17 @@ class SalusMqttConnection:
 
     @property
     def push_available(self) -> bool | None:
-        """Return whether shadow documents are received, None while unknown."""
         return self._push_available
 
     def set_device_codes(self, device_codes: list[str]) -> None:
-        """Set devices whose shadow documents are subscribed on the next connection."""
         self._device_codes = list(device_codes)
 
     async def async_start(self, device_codes: list[str]) -> None:
-        """Start keeping the connection in the background."""
         self._loop = asyncio.get_running_loop()
         self._device_codes = list(device_codes)
         self._task = self._loop.create_task(self._run(), name="salus_it600_cloud_mqtt")
 
     async def async_stop(self) -> None:
-        """Stop the connection."""
         if self._task is not None:
             self._task.cancel()
             with suppress(asyncio.CancelledError):
@@ -145,7 +132,6 @@ class SalusMqttConnection:
         await self._async_stop_client()
 
     async def async_publish_shadow(self, device_code: str, device_index: str, properties: dict[str, Any]) -> None:
-        """Set desired properties of a device shadow."""
         try:
             async with asyncio.timeout(CONNECT_TIMEOUT):
                 await self._connected.wait()
@@ -266,7 +252,6 @@ class SalusMqttConnection:
     def _on_message(self, client: Any, userdata: Any, message: Any) -> None:
         self._loop.call_soon_threadsafe(self._handle_message, client, message.topic, message.payload)
 
-    # Handlers below run in the event loop
 
     def _handle_connect(self, client: Any, failure: str | None) -> None:
         if client is self._client and self._connack is not None and not self._connack.done():

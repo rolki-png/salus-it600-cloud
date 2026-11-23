@@ -1,5 +1,3 @@
-"""Classification of Salus devices."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -9,7 +7,6 @@ SWITCH_MODELS = ("RS600", "SPE600", "SR600")
 
 
 def is_climate_device(device: dict[str, Any]) -> bool:
-    """Return whether the device is a thermostat."""
     return (
         device["type"].lower() in ("thermostat", "climate")
         or device["model"].upper().startswith(CLIMATE_MODELS)
@@ -18,5 +15,4 @@ def is_climate_device(device: dict[str, Any]) -> bool:
 
 
 def is_switch_device(device: dict[str, Any]) -> bool:
-    """Return whether the device is a relay or a smart plug."""
     return device["type"].lower() in ("switch", "relay") or device["model"].upper().startswith(SWITCH_MODELS)

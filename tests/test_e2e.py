@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker, AiohttpClientMockResponse
 
@@ -67,12 +67,13 @@ async def broker(hass: HomeAssistant) -> _Broker:
         yield broker
 
 
-async def _set_up(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, slider_details: dict[str, Any]) -> None:
+async def _set_up(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, slider_details: dict[str, Any]) -> str:
     _cloud(aioclient_mock, slider_details)
     entry = MockConfigEntry(domain=DOMAIN, data={"email": "owner@example.com", "password": "password"})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    return entry.entry_id
 
 
 def _entity_id(hass: HomeAssistant, platform: str, device_id: str) -> str:
@@ -144,3 +145,14 @@ async def test_grouped_account_with_null_types_gets_its_thermostats(
     assert hass.states.get(_entity_id(hass, "climate", fixtures.THERMOSTAT_ID)).attributes["current_temperature"] == 22.0
     assert hass.states.get(_entity_id(hass, "climate", fixtures.THERMOSTAT_2_ID)) is not None
     assert hass.states.get(_entity_id(hass, "switch", fixtures.RELAY_ID)) is not None
+
+
+async def test_devices_hang_off_their_gateway_in_the_device_registry(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, broker: _Broker
+) -> None:
+    entry_id = await _set_up(hass, aioclient_mock, fixtures.slider_details())
+    devices = dr.async_get(hass)
+
+    gateway = devices.async_get_device_by_identifier((DOMAIN, fixtures.GATEWAY_ID), entry_id)
+    thermostat = devices.async_get_device_by_identifier((DOMAIN, fixtures.THERMOSTAT_ID), entry_id)
+    assert thermostat.via_device_id == gateway.id

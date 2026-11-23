@@ -1,5 +1,3 @@
-"""Data coordinator for Salus iT600 Cloud: device states, commands and thermostat mode synchronization."""
-
 from __future__ import annotations
 
 import asyncio
@@ -43,14 +41,10 @@ from .state import DeviceStateStore, extract_reported
 
 _LOGGER = logging.getLogger(__name__)
 
-# Device from the Salus device list extended with "_gateway_id", "_shadow_properties",
-# "_shadow_device_index" and "_fresh"
 type SalusDevice = dict[str, Any]
 
 
 class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
-    """Keeps Salus device data up to date and sends commands to devices."""
-
     config_entry: ConfigEntry
 
     def __init__(
@@ -62,7 +56,6 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         connection_factory: Callable[..., SalusMqttConnection] = SalusMqttConnection,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        """Initialize coordinator."""
         super().__init__(
             hass,
             _LOGGER,
@@ -79,34 +72,27 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         self._connection: SalusMqttConnection | None = None
         self._cancel_confirmation: CALLBACK_TYPE | None = None
         self.push_available = False
-        # Gateway id -> device registry id of the gateway device
         self.gateway_device_ids: dict[str, str] = {}
 
     @property
     def sync_modes(self) -> bool:
-        """Return whether a mode change is applied to all thermostats of the gateway."""
         return bool(self.config_entry.options.get(CONF_SYNC_MODES, False))
 
     @property
     def gateways(self) -> list[GatewayInfo]:
-        """Return gateways of the account."""
         return self._metadata.gateways if self._metadata else []
 
     @property
     def rules(self) -> list[dict[str, Any]]:
-        """Return OneTouch rules of all gateways."""
         return self._metadata.rules if self._metadata else []
 
     def get_gateway(self, gateway_id: str) -> GatewayInfo | None:
-        """Return gateway by id."""
         return next((gateway for gateway in self.gateways if gateway.id == gateway_id), None)
 
     def get_device(self, device_id: str) -> SalusDevice | None:
-        """Return current data of a device."""
         return (self.data or {}).get(device_id)
 
     def device_info(self, device: SalusDevice) -> DeviceInfo:
-        """Return device registry info of a device linked to its gateway."""
         info = DeviceInfo(
             identifiers={(DOMAIN, device["id"])},
             name=device.get("name") or device["id"],
@@ -170,7 +156,6 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         return data
 
     async def async_start_connection(self) -> None:
-        """Connect to AWS IoT for commands and pushed device state changes."""
         if not self.gateways:
             return
         self._connection = self._connection_factory(
@@ -182,7 +167,6 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         await self._connection.async_start(self._device_codes())
 
     async def async_shutdown(self) -> None:
-        """Stop polling and the AWS IoT connection."""
         await super().async_shutdown()
         if self._cancel_confirmation is not None:
             self._cancel_confirmation()
@@ -204,7 +188,6 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         self.update_interval = timedelta(seconds=PUSH_SCAN_INTERVAL_SECONDS if available else SCAN_INTERVAL_SECONDS)
 
     async def async_set_hold_type(self, device_id: str, hold_type: int) -> None:
-        """Set hold type of a thermostat, or of all thermostats of its gateway when modes are synchronized."""
         device = self._require_device(device_id)
         targets = [device]
         if self.sync_modes:
@@ -216,7 +199,6 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         await self._async_send(targets, {ThermostatCommand.HOLD: hold_type})
 
     async def async_set_temperature(self, device_id: str, temperature: float) -> None:
-        """Set target temperature of a thermostat (switches it to manual hold)."""
         await self._async_send(
             [self._require_device(device_id)],
             {
@@ -227,11 +209,9 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         )
 
     async def async_set_switch(self, device_id: str, turn_on: bool) -> None:
-        """Turn relay or smart plug on or off."""
         await self._async_send([self._require_device(device_id)], {wire.desired(wire.ON_OFF): 1 if turn_on else 0})
 
     async def async_trigger_rule(self, gateway_id: str, rule_trigger_key: str) -> None:
-        """Trigger a OneTouch rule of a gateway."""
         gateway = self.get_gateway(gateway_id)
         if gateway is None:
             raise HomeAssistantError(f"Salus gateway {gateway_id} not found")
