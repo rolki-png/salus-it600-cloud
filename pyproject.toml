@@ -11,6 +11,7 @@ test = [
 
 [tool.uv]
 package = false
+default-groups = ["test"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
