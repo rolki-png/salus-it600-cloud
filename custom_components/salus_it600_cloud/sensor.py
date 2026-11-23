@@ -28,9 +28,11 @@ async def async_setup_entry(
     coordinator: SalusCloudCoordinator = entry.runtime_data
     entities: list[SensorEntity] = []
     for device_id, device in coordinator.data.items():
+        observation = observe(device.properties)
         if is_climate_device(device.listing):
             for metric in TEMPERATURE_METRICS:
-                entities.append(SalusHeatingTemperature(coordinator, device_id, device, metric))
+                if not metric.only_when_reported or (observation is not None and metric.read(observation) is not None):
+                    entities.append(SalusHeatingTemperature(coordinator, device_id, device, metric))
         elif _has_temperature(device.listing):
             entities.append(SalusCloudTemperatureSensor(coordinator, device_id, device))
         if _has_humidity(device.listing):

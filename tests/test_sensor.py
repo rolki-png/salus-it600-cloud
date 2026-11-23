@@ -49,6 +49,30 @@ async def test_setup_creates_measurement_sensors_for_thermostats_only() -> None:
     assert all(entity.suggested_display_precision == 1 for entity in entities)
 
 
+async def test_cooling_setpoint_and_ambient_sensors_exist_only_where_reported() -> None:
+    api = FakeApi()
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    shadow["state"]["reported"]["11"]["properties"].update(
+        {"ep9:sIT600TH:CoolingSetpoint_x100": 2450, "ep9:sTempS:MeasuredValue_x100": 2125}
+    )
+    api.shadows[fixtures.THERMOSTAT_CODE] = shadow
+    coordinator, _, _ = await create_coordinator(api)
+    entry = MagicMock()
+    entry.runtime_data = coordinator
+    add_entities = MagicMock()
+
+    await sensor.async_setup_entry(MagicMock(), entry, add_entities)
+
+    entities = {entity.unique_id: entity for entity in add_entities.call_args.args[0]}
+    assert entities[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")].native_value == 24.5
+    assert entities[_uid(fixtures.THERMOSTAT_ID, "cooling_setpoint")].name == (
+        "Apartmán A Termostat pokoj Cooling setpoint"
+    )
+    assert entities[_uid(fixtures.THERMOSTAT_ID, "ambient_temperature")].native_value == 21.25
+    assert _uid(fixtures.THERMOSTAT_2_ID, "cooling_setpoint") not in entities
+    assert _uid(fixtures.THERMOSTAT_2_ID, "ambient_temperature") not in entities
+
+
 async def test_native_values_match_reported_temperatures() -> None:
     coordinator, _, _ = await create_coordinator()
 

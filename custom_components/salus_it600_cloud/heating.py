@@ -57,6 +57,18 @@ def centi_celsius_from_degrees(degrees: float) -> int:
 
 
 @dataclass(frozen=True)
+class CentiPercent:
+    hundredths: int
+
+    def __post_init__(self) -> None:
+        if type(self.hundredths) is not int:
+            raise TypeError("hundredths must be an int")
+
+    def percent(self) -> float:
+        return self.hundredths / 100
+
+
+@dataclass(frozen=True)
 class DeciVolt:
     tenths: int
 
@@ -114,17 +126,25 @@ class ThermostatObservation:
     hold: Hold
     system_mode: SystemMode
     battery: DeciVolt | None
+    cooling_setpoint: CentiCelsius | None = None
+    ambient_temperature: CentiCelsius | None = None
+    humidity: CentiPercent | None = None
+    battery_level: int | None = None
 
     def __post_init__(self) -> None:
         if type(self.demand) is not Demand:
             raise TypeError("demand must be Demand")
-        for sample in (self.local_temperature, self.heating_setpoint):
+        for sample in (self.local_temperature, self.heating_setpoint, self.cooling_setpoint, self.ambient_temperature):
             if sample is not None and type(sample) is not CentiCelsius:
                 raise TypeError("temperatures must be CentiCelsius")
         if type(self.hold) not in (HoldCell, HoldReported) or type(self.system_mode) is not SystemMode:
             raise TypeError("hold and system_mode must be their domain types")
         if self.battery is not None and type(self.battery) is not DeciVolt:
             raise TypeError("battery must be DeciVolt")
+        if self.humidity is not None and type(self.humidity) is not CentiPercent:
+            raise TypeError("humidity must be CentiPercent")
+        if self.battery_level is not None and not (type(self.battery_level) is int and 0 <= self.battery_level <= 100):
+            raise TypeError("battery_level must be an int percentage")
 
     def hold_label(self) -> str | None:
         match self.hold:
@@ -155,6 +175,7 @@ class TemperatureMetric:
     slug: str
     name: str
     read: Callable[[ThermostatObservation], CentiCelsius | None]
+    only_when_reported: bool = False
 
 
 @dataclass(frozen=True)
@@ -171,9 +192,19 @@ def _read_setpoint(observation: ThermostatObservation) -> CentiCelsius | None:
     return observation.heating_setpoint
 
 
+def _read_cooling_setpoint(observation: ThermostatObservation) -> CentiCelsius | None:
+    return observation.cooling_setpoint
+
+
+def _read_ambient(observation: ThermostatObservation) -> CentiCelsius | None:
+    return observation.ambient_temperature
+
+
 TEMPERATURE_METRICS: tuple[TemperatureMetric, ...] = (
     TemperatureMetric("local_temperature", "Temperature", _read_local),
     TemperatureMetric("heating_setpoint", "Heating setpoint", _read_setpoint),
+    TemperatureMetric("cooling_setpoint", "Cooling setpoint", _read_cooling_setpoint, only_when_reported=True),
+    TemperatureMetric("ambient_temperature", "Ambient temperature", _read_ambient, only_when_reported=True),
 )
 RUNNING_STATE_METRIC = DemandMetric("running_state", "Running state")
 
@@ -193,6 +224,7 @@ _HOLD_LABELS: dict[int, str] = {
 class ThermostatCommand:
     HOLD = wire.desired(wire.HOLD_TYPE)
     SETPOINT = wire.desired(wire.HEATING_SETPOINT_X100)
+    COOLING_SETPOINT = wire.desired(wire.COOLING_SETPOINT_X100)
     SYSTEM_MODE = wire.desired(wire.SYSTEM_MODE)
 
 
@@ -231,7 +263,12 @@ def observation_from_cells(
     system_mode_present: bool,
     battery_tenths: Any,
     battery_present: bool,
+    cooling_x100: Any = None,
+    ambient_x100: Any = None,
+    humidity_x100: Any = None,
+    battery_level: Any = None,
 ) -> ThermostatObservation:
+    """The cells after battery_present are None when absent: absent and unreadable both read as unknown."""
     tenths = _optional_int(battery_present, battery_tenths)
     return ThermostatObservation(
         demand=decode_running_cell(running, present=running_present),
@@ -240,6 +277,10 @@ def observation_from_cells(
         hold=_hold(hold_present, hold),
         system_mode=SystemMode(_optional_int(system_mode_present, system_mode)),
         battery=None if tenths is None else DeciVolt(tenths),
+        cooling_setpoint=decode_x100_cell(cooling_x100, present=True),
+        ambient_temperature=decode_x100_cell(ambient_x100, present=True),
+        humidity=CentiPercent(humidity_x100) if type(humidity_x100) is int else None,
+        battery_level=battery_level if type(battery_level) is int and 0 <= battery_level <= 100 else None,
     )
 
 
@@ -265,6 +306,10 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
         system_mode_present=system_present,
         battery_tenths=battery,
         battery_present=battery_present,
+        cooling_x100=properties.get(wire.COOLING_SETPOINT_X100),
+        ambient_x100=_any_endpoint_value(properties, wire.AMBIENT_TEMPERATURE_X100),
+        humidity_x100=_any_endpoint_value(properties, wire.HUMIDITY_X100),
+        battery_level=properties.get(wire.BATTERY_LEVEL),
     )
 
 
@@ -287,6 +332,11 @@ def _cell(properties: Mapping[str, Any], key: str) -> tuple[bool, Any]:
     if key not in properties:
         return False, None
     return True, properties[key]
+
+
+def _any_endpoint_value(properties: Mapping[str, Any], service_property: str) -> Any:
+    found = wire.find_reported(properties, service_property)
+    return None if found is None else found[1]
 
 
 def _optional_int(present: bool, value: Any) -> int | None:
