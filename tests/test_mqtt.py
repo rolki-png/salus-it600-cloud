@@ -143,8 +143,9 @@ class _Client:
         if self._closes_at_subscribe:
             self._closes_at_subscribe = False
             self.drop()
-            self.broker.wait_for_queued_callbacks()
         if not self._connected:
+            # A command woken by this connection gets to run before the failed call returns
+            self.broker.wait_for_queued_callbacks()
             return mqtt.MQTT_ERR_NO_CONN, None
         self._mid += 1
         self.subscriptions.append([topic for topic, _ in topics])
