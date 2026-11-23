@@ -10,6 +10,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -72,7 +73,7 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
         self._connection: SalusMqttConnection | None = None
         self._cancel_confirmation: CALLBACK_TYPE | None = None
         self.push_available = False
-        self.gateway_device_ids: dict[str, str] = {}
+        self._gateway_device_ids: dict[str, str] = {}
 
     @property
     def sync_modes(self) -> bool:
@@ -92,6 +93,9 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
     def get_device(self, device_id: str) -> SalusDevice | None:
         return (self.data or {}).get(device_id)
 
+    def gateway_device_id(self, gateway_id: str) -> str | None:
+        return self._gateway_device_ids.get(gateway_id)
+
     def device_info(self, device: SalusDevice) -> DeviceInfo:
         info = DeviceInfo(
             identifiers={(DOMAIN, device["id"])},
@@ -99,7 +103,7 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             manufacturer="Salus",
             model=device.get("model") or "iT600",
         )
-        if via_device_id := self.gateway_device_ids.get(device.get("_gateway_id", "")):
+        if via_device_id := self.gateway_device_id(device.get("_gateway_id", "")):
             info["via_device_id"] = via_device_id
         return info
 
@@ -137,8 +141,22 @@ class SalusCloudCoordinator(DataUpdateCoordinator[dict[str, SalusDevice]]):
             return
         self._metadata = metadata
         self._metadata_fetched_at = now
+        self._register_gateways(metadata.gateways)
         if self._connection is not None:
             self._connection.set_device_codes(self._device_codes())
+
+    def _register_gateways(self, gateways: list[GatewayInfo]) -> None:
+        registry = dr.async_get(self.hass)
+        self._gateway_device_ids = {
+            gateway.id: registry.async_get_or_create(
+                config_entry_id=self.config_entry.entry_id,
+                identifiers={(DOMAIN, gateway.id)},
+                manufacturer="Salus",
+                model="iT600 Gateway",
+                name=gateway.name,
+            ).id
+            for gateway in gateways
+        }
 
     def _build_data(self, now: float) -> dict[str, SalusDevice]:
         data: dict[str, SalusDevice] = {}

@@ -4,11 +4,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import SalusCloudApi, SalusCloudAuthenticationError, SalusCloudConnectionError
-from .const import DOMAIN
 from .coordinator import SalusCloudCoordinator
 
 PLATFORMS: list[Platform] = [
@@ -33,17 +31,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: SalusConfigEntry) -> boo
 
     coordinator = SalusCloudCoordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
-
-    device_registry = dr.async_get(hass)
-    for gateway in coordinator.gateways:
-        device = device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, gateway.id)},
-            manufacturer="Salus",
-            model="iT600 Gateway",
-            name=gateway.name,
-        )
-        coordinator.gateway_device_ids[gateway.id] = device.id
 
     await coordinator.async_start_connection()
     entry.runtime_data = coordinator

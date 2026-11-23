@@ -44,7 +44,7 @@ class SalusOneTouchButton(ButtonEntity):
             manufacturer="Salus",
             model="OneTouch Rules",
         )
-        if via_device_id := coordinator.gateway_device_ids.get(self._gateway_id):
+        if via_device_id := coordinator.gateway_device_id(self._gateway_id):
             device_info["via_device_id"] = via_device_id
         self._attr_device_info = device_info
 
