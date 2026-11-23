@@ -33,19 +33,25 @@ def test_no_method_call_on_a_defaulted_get() -> None:
 
 def paho_thread_offences(source: str) -> tuple[set[str], list[str]]:
     tree = ast.parse(source)
-    wired = {
-        target.attr: node.value
+    wired = [
+        (target.attr, node.value)
         for node in ast.walk(tree)
         if isinstance(node, ast.Assign)
         for target in node.targets
         if isinstance(target, ast.Attribute) and target.attr.startswith("on_")
-    }
+    ]
     callback_names = {
         value.attr if isinstance(value, ast.Attribute) else value.id
-        for value in wired.values()
+        for _, value in wired
         if isinstance(value, (ast.Attribute, ast.Name))
     }
     offences = [
+        f"line {value.lineno}: {attr} is wired to a {type(value).__name__}, not a method"
+        for attr, value in wired
+        if not isinstance(value, (ast.Attribute, ast.Name))
+        and not (isinstance(value, ast.Constant) and value.value is None)
+    ]
+    offences += [
         f"line {node.lineno}: asyncio.get_event_loop()"
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute) and node.attr == "get_event_loop"
@@ -54,13 +60,12 @@ def paho_thread_offences(source: str) -> tuple[set[str], list[str]]:
         if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) or function.name not in callback_names:
             continue
         for node in ast.walk(function):
-            if (
-                isinstance(node, ast.Attribute)
-                and isinstance(node.value, ast.Name)
-                and node.value.id == "self"
-                and node.attr != "_loop"
-                and not node.attr.startswith("_handle_")
-            ):
+            if not (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self"):
+                continue
+            if node.attr.startswith("_handle_"):
+                if any(isinstance(call, ast.Call) and call.func is node for call in ast.walk(function)):
+                    offences.append(f"line {node.lineno}: {function.name} calls self.{node.attr} on paho's thread")
+            elif node.attr != "_loop":
                 offences.append(f"line {node.lineno}: {function.name} reads self.{node.attr}")
     return callback_names, offences
 
@@ -72,8 +77,46 @@ def test_paho_callbacks_only_hand_off_to_the_event_loop() -> None:
         f"mqtt.py {offences}: paho calls on_* callbacks from its network thread, where there is no event loop "
         "(the Python 3.13 MQTT timeout fixed in v1.0.3). A callback may only call "
         "self._loop.call_soon_threadsafe(self._handle_<event>, ...), with self._loop captured by "
-        "asyncio.get_running_loop() in async_start. Do the work in the _handle_<event> method."
+        "asyncio.get_running_loop() in async_start. Do the work in the _handle_<event> method, and wire "
+        "client.on_<event> to a bound method, not a lambda or functools.partial, so this lint can see its body."
     )
+
+
+_PAHO_HANDOFF = """
+class Connection:
+    def _wire(self, client):
+        client.on_message = self._on_message
+
+    def _on_message(self, client, userdata, message):
+        self._loop.call_soon_threadsafe(self._handle_message, client, message.topic, message.payload)
+"""
+
+
+def test_paho_lint_accepts_the_handoff() -> None:
+    assert paho_thread_offences(_PAHO_HANDOFF) == ({"_on_message"}, [])
+
+
+def test_paho_lint_catches_a_direct_handler_call() -> None:
+    source = _PAHO_HANDOFF.replace(
+        "self._loop.call_soon_threadsafe(self._handle_message, client, message.topic, message.payload)",
+        "self._handle_message(client, message.topic, message.payload)",
+    )
+    _, offences = paho_thread_offences(source)
+    assert offences == ["line 7: _on_message calls self._handle_message on paho's thread"]
+
+
+def test_paho_lint_catches_a_lambda_or_partial_callback() -> None:
+    source = _PAHO_HANDOFF + (
+        "    def _wire_more(self, client):\n"
+        "        client.on_unsubscribe = lambda *args: self._handle_unsubscribe(*args)\n"
+        "        client.on_log = functools.partial(self._handle_log, client)\n"
+        "        client.on_publish = None\n"
+    )
+    _, offences = paho_thread_offences(source)
+    assert offences == [
+        "line 9: on_unsubscribe is wired to a Lambda, not a method",
+        "line 10: on_log is wired to a Call, not a method",
+    ]
 
 
 def _called_name(call: ast.Call) -> str | None:
