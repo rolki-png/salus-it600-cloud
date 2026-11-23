@@ -74,3 +74,41 @@ def test_paho_callbacks_only_hand_off_to_the_event_loop() -> None:
         "self._loop.call_soon_threadsafe(self._handle_<event>, ...), with self._loop captured by "
         "asyncio.get_running_loop() in async_start. Do the work in the _handle_<event> method."
     )
+
+
+def _called_name(call: ast.Call) -> str | None:
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return None
+
+
+def observation_construction_offences(tree: ast.Module) -> list[int]:
+    allowed = {
+        id(node)
+        for function in ast.walk(tree)
+        if isinstance(function, ast.FunctionDef) and function.name == "observation_from_cells"
+        for node in ast.walk(function)
+    }
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _called_name(node) == "ThermostatObservation" and id(node) not in allowed
+    ]
+
+
+def test_only_observation_from_cells_builds_an_observation() -> None:
+    offences = [f"{path.name}:{line}" for path, tree in _sources() for line in observation_construction_offences(tree)]
+    assert not offences, (
+        f"{offences}: build a ThermostatObservation only through heating.observation_from_cells (or observe), "
+        "which decodes each raw cell once, so a bool cannot pose as heating and an absent key stays UNREPORTED."
+    )
+
+
+def test_observation_lint_catches_a_direct_construction() -> None:
+    source = (
+        "def observation_from_cells():\n    return ThermostatObservation()\n"
+        "def shortcut():\n    return heating.ThermostatObservation(demand=Demand.IDLE)\n"
+    )
+    assert observation_construction_offences(ast.parse(source)) == [4]
