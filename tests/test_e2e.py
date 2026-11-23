@@ -156,3 +156,21 @@ async def test_devices_hang_off_their_gateway_in_the_device_registry(
     gateway = devices.async_get_device_by_identifier((DOMAIN, fixtures.GATEWAY_ID), entry_id)
     thermostat = devices.async_get_device_by_identifier((DOMAIN, fixtures.THERMOSTAT_ID), entry_id)
     assert thermostat.via_device_id == gateway.id
+
+
+async def test_thermostat_listing_with_humidity_and_battery_gets_those_sensors(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, broker: _Broker
+) -> None:
+    details = fixtures.slider_details()
+    details["data"]["items"][0].update({"humidity": 45, "battery": 80, "temperature": 2200})
+    await _set_up(hass, aioclient_mock, details)
+    registry = er.async_get(hass)
+
+    def sensor(suffix: str) -> str | None:
+        unique_id = f"{DOMAIN}_{fixtures.GATEWAY_ID}_{fixtures.THERMOSTAT_ID}_{suffix}"
+        return registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+
+    assert hass.states.get(sensor("humidity")).state == "45.0"
+    assert hass.states.get(sensor("battery")).state == "80.0"
+    assert sensor("temperature") is None
+    assert hass.states.get(sensor("local_temperature")).state == "22.0"

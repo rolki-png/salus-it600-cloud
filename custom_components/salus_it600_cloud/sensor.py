@@ -31,8 +31,7 @@ async def async_setup_entry(
         if is_climate_device(device.listing):
             for metric in TEMPERATURE_METRICS:
                 entities.append(SalusHeatingTemperature(coordinator, device_id, device, metric))
-            continue
-        if _has_temperature(device.listing):
+        elif _has_temperature(device.listing):
             entities.append(SalusCloudTemperatureSensor(coordinator, device_id, device))
         if _has_humidity(device.listing):
             entities.append(SalusCloudHumiditySensor(coordinator, device_id, device))
