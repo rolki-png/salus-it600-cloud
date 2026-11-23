@@ -15,7 +15,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import SalusCloudCoordinator, SalusDevice
+from .devices import is_climate_device
 from .entity import SalusEntity
+from .heating import TEMPERATURE_METRICS, TemperatureMetric, observe
 
 
 async def async_setup_entry(
@@ -27,6 +29,10 @@ async def async_setup_entry(
     coordinator: SalusCloudCoordinator = entry.runtime_data
     entities: list[SensorEntity] = []
     for device_id, device in coordinator.data.items():
+        if is_climate_device(device):
+            for metric in TEMPERATURE_METRICS:
+                entities.append(SalusHeatingTemperature(coordinator, device_id, device, metric))
+            continue
         if _has_temperature(device):
             entities.append(SalusCloudTemperatureSensor(coordinator, device_id, device))
         if _has_humidity(device):
@@ -62,6 +68,35 @@ def _value(data: dict[str, Any], fields: tuple[str, ...], scale_above_100: bool)
                     return value / 100.0
                 return float(value)
     return None
+
+
+class SalusHeatingTemperature(SalusEntity, SensorEntity):
+    """Room temperature or heating setpoint from the thermostat shadow."""
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self,
+        coordinator: SalusCloudCoordinator,
+        device_id: str,
+        device: SalusDevice,
+        metric: TemperatureMetric,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, device_id, device)
+        self._metric = metric
+        self._attr_name = f"{self._attr_name} {metric.name}"
+        self._attr_unique_id = f"{self._attr_unique_id}_{metric.slug}"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the temperature in degrees Celsius."""
+        observation = observe(self.shadow_properties)
+        sample = None if observation is None else self._metric.read(observation)
+        return None if sample is None else sample.celsius()
 
 
 class SalusCloudSensor(SalusEntity, SensorEntity):

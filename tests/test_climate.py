@@ -72,7 +72,7 @@ async def test_manual_mode_actively_heating() -> None:
 
 
 async def test_standby_mode_state() -> None:
-    """Thermostat in stand-by (frost protection) is off."""
+    """Thermostat in stand-by (frost protection) is off when demand was reported."""
 
     api = FakeApi()
     api.shadows[fixtures.THERMOSTAT_CODE] = fixtures.thermostat_shadow(hold_type=7)
@@ -80,6 +80,65 @@ async def test_standby_mode_state() -> None:
     entity = _entity(coordinator)
 
     assert (entity.hvac_mode, entity.preset_mode, entity.hvac_action) == (HVACMode.OFF, "away", HVACAction.OFF)
+
+
+async def test_missing_running_state_stays_unknown_in_heat() -> None:
+    """Heat mode with no RunningState is unknown, not idle."""
+
+    api = FakeApi()
+    shadow = fixtures.thermostat_shadow(hold_type=0)
+    del shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"]
+    api.shadows[fixtures.THERMOSTAT_CODE] = shadow
+    coordinator, _, _ = await create_coordinator(api)
+    entity = _entity(coordinator)
+
+    assert entity.hvac_mode is HVACMode.HEAT
+    assert entity.hvac_action is None
+    assert "running_state" not in entity.extra_state_attributes
+
+
+async def test_standby_without_running_state_is_not_off_action() -> None:
+    """Stand-by does not hide a missing RunningState behind HVACAction.OFF."""
+
+    api = FakeApi()
+    shadow = fixtures.thermostat_shadow(hold_type=7)
+    del shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"]
+    api.shadows[fixtures.THERMOSTAT_CODE] = shadow
+    coordinator, _, _ = await create_coordinator(api)
+    entity = _entity(coordinator)
+
+    assert entity.hvac_mode is HVACMode.OFF
+    assert entity.preset_mode == "away"
+    assert entity.hvac_action is None
+
+
+@pytest.mark.parametrize("running", [True, False, None, 1.0])
+async def test_unreadable_running_state_is_unknown_action(running: object) -> None:
+    """A present non-integer RunningState is unknown, including bool True which equals 1."""
+
+    api = FakeApi()
+    shadow = fixtures.thermostat_shadow(hold_type=2)
+    shadow["state"]["reported"]["11"]["properties"]["ep9:sIT600TH:RunningState"] = running
+    api.shadows[fixtures.THERMOSTAT_CODE] = shadow
+    coordinator, _, _ = await create_coordinator(api)
+    entity = _entity(coordinator)
+
+    assert entity.hvac_mode is HVACMode.HEAT
+    assert entity.hvac_action is None
+    assert "running_state" not in entity.extra_state_attributes
+
+
+async def test_attributes_follow_the_observation() -> None:
+    """Cards keep the same attribute names, filled from the observation."""
+
+    coordinator, _, _ = await create_coordinator()
+
+    assert _entity(coordinator).extra_state_attributes == {
+        "hold_type": "Schedule",
+        "system_mode": "Heat",
+        "battery_voltage": "3.0V",
+        "running_state": "Idle",
+    }
 
 
 async def test_thermostat_without_reported_state_is_unavailable() -> None:

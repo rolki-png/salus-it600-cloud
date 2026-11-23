@@ -13,7 +13,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import SalusCloudCoordinator, SalusDevice
+from .devices import is_climate_device
 from .entity import SalusEntity
+from .heating import RUNNING_STATE_METRIC, observe
 
 BINARY_SENSOR_TYPES = ("door_sensor", "window_sensor", "motion_sensor", "binary_sensor")
 TRUE_VALUES = ("on", "true", "1", "open", "active")
@@ -26,13 +28,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up Salus iT600 Cloud binary sensors."""
     coordinator: SalusCloudCoordinator = entry.runtime_data
-    async_add_entities(
-        [
-            SalusCloudBinarySensor(coordinator, device_id, device, _get_device_class(device))
-            for device_id, device in coordinator.data.items()
-            if _is_binary_sensor_device(device)
-        ]
-    )
+    entities: list[BinarySensorEntity] = []
+    for device_id, device in coordinator.data.items():
+        if _is_binary_sensor_device(device):
+            entities.append(SalusCloudBinarySensor(coordinator, device_id, device, _get_device_class(device)))
+        if is_climate_device(device):
+            entities.append(SalusRunningState(coordinator, device_id, device))
+    async_add_entities(entities)
 
 
 def _is_binary_sensor_device(device: dict[str, Any]) -> bool:
@@ -60,6 +62,27 @@ def _as_bool(value: Any) -> bool | None:
     if isinstance(value, int):
         return value == 1
     return None
+
+
+class SalusRunningState(SalusEntity, BinarySensorEntity):
+    """Call for heat from RunningState.
+
+    This can be on while climate hvac_action is off, because frost protection still reports demand.
+    """
+
+    _attr_device_class = BinarySensorDeviceClass.HEAT
+
+    def __init__(self, coordinator: SalusCloudCoordinator, device_id: str, device: SalusDevice) -> None:
+        """Initialize the running-state sensor."""
+        super().__init__(coordinator, device_id, device)
+        self._attr_name = f"{self._attr_name} {RUNNING_STATE_METRIC.name}"
+        self._attr_unique_id = f"{self._attr_unique_id}_{RUNNING_STATE_METRIC.slug}"
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the thermostat is calling for heat. None when that was not reported as an int."""
+        observation = observe(self.shadow_properties)
+        return None if observation is None else observation.demand.is_on()
 
 
 class SalusCloudBinarySensor(SalusEntity, BinarySensorEntity):

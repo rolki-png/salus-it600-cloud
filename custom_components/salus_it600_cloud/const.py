@@ -35,8 +35,3 @@ CONFIRM_REFRESH_DELAY_SECONDS = 10
 # Shadow device index of the gateway itself and default index of other devices
 GATEWAY_SHADOW_INDEX = "000000000001"
 DEFAULT_SHADOW_INDEX = "11"
-
-# Thermostat hold types
-HOLD_TYPE_SCHEDULE = 0
-HOLD_TYPE_MANUAL = 2
-HOLD_TYPE_STANDBY = 7
