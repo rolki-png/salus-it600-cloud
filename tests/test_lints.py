@@ -5,7 +5,7 @@ PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "salus_it6
 
 
 def _sources() -> list[tuple[Path, ast.Module]]:
-    return [(path, ast.parse(path.read_text(), str(path))) for path in sorted(PACKAGE.glob("*.py"))]
+    return [(path, ast.parse(path.read_text(), str(path))) for path in sorted(PACKAGE.rglob("*.py"))]
 
 
 def _is_dict_get_with_default(node: ast.AST) -> bool:
@@ -19,7 +19,7 @@ def _is_dict_get_with_default(node: ast.AST) -> bool:
 
 def test_no_method_call_on_a_defaulted_get() -> None:
     offences = [
-        f"{path.name}:{node.lineno}"
+        f"{path.relative_to(PACKAGE)}:{node.lineno}"
         for path, tree in _sources()
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute) and _is_dict_get_with_default(node.value)
@@ -142,7 +142,7 @@ def observation_construction_offences(tree: ast.Module) -> list[int]:
 
 
 def test_only_observation_from_cells_builds_an_observation() -> None:
-    offences = [f"{path.name}:{line}" for path, tree in _sources() for line in observation_construction_offences(tree)]
+    offences = [f"{path.relative_to(PACKAGE)}:{line}" for path, tree in _sources() for line in observation_construction_offences(tree)]
     assert not offences, (
         f"{offences}: build a ThermostatObservation only through heating.observation_from_cells (or observe), "
         "which decodes each raw cell once, so a bool cannot pose as heating and an absent key stays UNREPORTED."
