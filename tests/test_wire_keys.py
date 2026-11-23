@@ -44,3 +44,24 @@ def test_live_poll_does_not_import_cube() -> None:
 def test_catalog_rejects_the_v1_0_2_running_state_typo() -> None:
     with pytest.raises(ValueError):
         wire._reported("ep9:sIT600_TH:RunningState")
+
+
+def test_find_reported_reads_the_lowest_endpoint_and_keeps_null_apart_from_absent() -> None:
+    properties = {
+        "ep9:sHumiS:MeasuredValue_x100": 5100,
+        "ep1:sHumiS:MeasuredValue_x100": 4550,
+        "ep1:sHumiS:SetMeasuredValue_x100": 9999,
+        "ep_1:sHumiS:MeasuredValue_x100": 1,
+        "ep2:sOccupS:Occupancy": None,
+    }
+
+    assert wire.find_reported(properties, wire.HUMIDITY_X100) == ("ep1:sHumiS:MeasuredValue_x100", 4550)
+    assert wire.find_reported(properties, wire.OCCUPANCY) == ("ep2:sOccupS:Occupancy", None)
+    assert wire.find_reported(properties, wire.ZONE_ALARM) is None
+
+
+def test_any_endpoint_names_follow_the_reported_grammar() -> None:
+    with pytest.raises(ValueError):
+        wire._any_endpoint("sHumiS:SetMeasuredValue_x100")
+    with pytest.raises(ValueError):
+        wire._any_endpoint("ep1:sHumiS:MeasuredValue_x100")
