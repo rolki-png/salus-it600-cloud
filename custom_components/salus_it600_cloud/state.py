@@ -5,14 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .heating import desired_to_reported_thermostat
-
-# Commands are sent as "Set*" desired properties, devices report the result under these property names.
-# Thermostat pairs come from heating so the overlay cannot drift from observe().
-DESIRED_TO_REPORTED = {
-    "ep9:sOnOffS:SetOnOff": "ep9:sOnOffS:OnOff",
-    **desired_to_reported_thermostat(),
-}
+from . import wire
 
 
 def extract_reported(shadow: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
@@ -63,7 +56,7 @@ class DeviceStateStore:
 
         device = self._devices.setdefault(device_code, _DeviceState())
         for name, value in desired.items():
-            device.pending[DESIRED_TO_REPORTED.get(name, name)] = (value, now + self._pending_timeout)
+            device.pending[wire.reported(name)] = (value, now + self._pending_timeout)
 
     def properties(self, device_code: str, now: float) -> dict[str, Any]:
         """Return reported properties overridden by commanded changes the device has not reported yet."""

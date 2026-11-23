@@ -2,6 +2,8 @@
 
 import pytest
 
+from custom_components.salus_it600_cloud.state import DeviceStateStore
+
 from custom_components.salus_it600_cloud.heating import (
     CentiCelsius,
     Demand,
@@ -11,7 +13,6 @@ from custom_components.salus_it600_cloud.heating import (
     centi_celsius_from_degrees,
     decode_running_cell,
     decode_x100_cell,
-    desired_to_reported_thermostat,
     heating_action,
     hold_raw_for_preset,
     observation_from_cells,
@@ -165,25 +166,23 @@ def test_scale_pair_round_trips_setpoints() -> None:
         assert CentiCelsius(centi_celsius_from_degrees(degrees)).celsius() == degrees
 
 
-def test_setpoint_command_name_is_the_name_observe_reads() -> None:
-    """Pending overlay and the parser share one write-name to read-name pair."""
+def test_commands_show_up_in_the_observation() -> None:
+    """A commanded value is what observe reads back before the device confirms it."""
 
-    reported_name = desired_to_reported_thermostat()[ThermostatCommand.SETPOINT]
-    observation = observe({reported_name: centi_celsius_from_degrees(21.5)})
+    store = DeviceStateStore(pending_timeout=60, max_age=600)
+    store.update_reported("t", "11", {}, now=0)
+    store.set_pending(
+        "t",
+        {
+            ThermostatCommand.SETPOINT: centi_celsius_from_degrees(21.5),
+            ThermostatCommand.HOLD: hold_raw_for_preset("away"),
+            ThermostatCommand.SYSTEM_MODE: 0,
+        },
+        now=0,
+    )
+    observation = observe(store.properties("t", now=1))
 
     assert observation.heating_setpoint.celsius() == 21.5
-    assert ThermostatCommand.SETPOINT not in desired_to_reported_thermostat().values()
-
-
-def test_hold_and_system_commands_match_preset_and_mode() -> None:
-    mapping = desired_to_reported_thermostat()
-    observation = observe(
-        {
-            mapping[ThermostatCommand.HOLD]: hold_raw_for_preset("away"),
-            mapping[ThermostatCommand.SYSTEM_MODE]: 0,
-        }
-    )
-
     assert observation.preset_slug() == "away"
     assert observation.hold.is_standby is True
     assert observation.hold_label() == "Frost Protection"

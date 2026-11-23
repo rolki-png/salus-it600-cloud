@@ -1,6 +1,6 @@
 """Thermostat observation parsed from merged shadow properties.
 
-Wire names stay in this module. Platforms call observe() and the catalog.
+Platforms call observe() and the metric catalog, never wire names.
 """
 
 from __future__ import annotations
@@ -9,6 +9,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+
+from . import wire
 
 
 class Demand(Enum):
@@ -214,32 +216,18 @@ _HOLD_LABELS: dict[int, str] = {
     _PRESET_RAW["away"]: "Frost Protection",
 }
 
-_HOLD_WIRE = ("ep9:sIT600TH:SetHoldType", "ep9:sIT600TH:HoldType")
-_SETPOINT_WIRE = ("ep9:sIT600TH:SetHeatingSetpoint_x100", "ep9:sIT600TH:HeatingSetpoint_x100")
-_SYSTEM_WIRE = ("ep9:sIT600TH:SetSystemMode", "ep9:sIT600TH:SystemMode")
-_READ_ONLY = {
-    "running_state": "ep9:sIT600TH:RunningState",
-    "local_temperature": "ep9:sIT600TH:LocalTemperature_x100",
-    "battery": "ep9:sBasicS:BatteryVoltage",
-}
-
 
 class ThermostatCommand:
-    """Desired-property names the coordinator publishes. Reported names stay private."""
+    """Desired-property names the coordinator publishes."""
 
-    HOLD = _HOLD_WIRE[0]
-    SETPOINT = _SETPOINT_WIRE[0]
-    SYSTEM_MODE = _SYSTEM_WIRE[0]
+    HOLD = wire.desired(wire.HOLD_TYPE)
+    SETPOINT = wire.desired(wire.HEATING_SETPOINT_X100)
+    SYSTEM_MODE = wire.desired(wire.SYSTEM_MODE)
 
 
 def hold_raw_for_preset(slug: str) -> int:
     """Return the HoldType integer for a preset slug. KeyError on an unknown slug."""
     return _PRESET_RAW[slug]
-
-
-def desired_to_reported_thermostat() -> dict[str, str]:
-    """Reported names for thermostat commands. state.py is the only caller."""
-    return dict((_HOLD_WIRE, _SETPOINT_WIRE, _SYSTEM_WIRE))
 
 
 def decode_running_cell(value: Any, *, present: bool) -> Demand:
@@ -302,12 +290,12 @@ def observe(properties: Mapping[str, Any]) -> ThermostatObservation | None:
     """
     if not properties:
         return None
-    running_present, running = _cell(properties, _READ_ONLY["running_state"])
-    local_present, local = _cell(properties, _READ_ONLY["local_temperature"])
-    setpoint_present, setpoint = _cell(properties, _SETPOINT_WIRE[1])
-    hold_present, hold = _cell(properties, _HOLD_WIRE[1])
-    system_present, system_mode = _cell(properties, _SYSTEM_WIRE[1])
-    battery_present, battery = _cell(properties, _READ_ONLY["battery"])
+    running_present, running = _cell(properties, wire.RUNNING_STATE)
+    local_present, local = _cell(properties, wire.LOCAL_TEMPERATURE_X100)
+    setpoint_present, setpoint = _cell(properties, wire.HEATING_SETPOINT_X100)
+    hold_present, hold = _cell(properties, wire.HOLD_TYPE)
+    system_present, system_mode = _cell(properties, wire.SYSTEM_MODE)
+    battery_present, battery = _cell(properties, wire.BATTERY_VOLTAGE)
     return observation_from_cells(
         running=running,
         running_present=running_present,

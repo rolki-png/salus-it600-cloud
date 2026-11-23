@@ -9,11 +9,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import wire
 from .coordinator import SalusCloudCoordinator
 from .devices import is_switch_device
 from .entity import SalusEntity
-
-ON_OFF = "ep9:sOnOffS:OnOff"
 
 
 async def async_setup_entry(
@@ -38,7 +37,7 @@ class SalusCloudSwitch(SalusEntity, SwitchEntity):
     @property
     def is_on(self) -> bool | None:
         """Return whether the relay is on."""
-        value = self.shadow_properties.get(ON_OFF)
+        value = self.shadow_properties.get(wire.ON_OFF)
         return value == 1 if value is not None else None
 
     async def async_turn_on(self, **kwargs: Any) -> None:
