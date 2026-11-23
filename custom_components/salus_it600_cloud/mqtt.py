@@ -106,7 +106,7 @@ class SalusMqttConnection:
         self._connack: asyncio.Future[str | None] | None = None
         self._push_available: bool | None = None
         self._push_denied = False
-        self._subscribing = False
+        self._subscribing_client: Any = None
         self._subscriptions_sent = False
         self._expected_mids: set[int] = set()
         self._subacks: dict[int, bool] = {}
@@ -134,7 +134,9 @@ class SalusMqttConnection:
     async def async_publish_shadow(self, device_code: str, device_index: str, properties: dict[str, Any]) -> None:
         try:
             async with asyncio.timeout(CONNECT_TIMEOUT):
-                await self._connected.wait()
+                # wait() also returns when the connection was lost again before this task resumed
+                while not self._connected.is_set():
+                    await self._connected.wait()
         except TimeoutError as err:
             raise SalusCloudConnectionError("Not connected to AWS IoT") from err
         client = self._client
@@ -195,6 +197,8 @@ class SalusMqttConnection:
             failure = await self._connack
         if failure:
             raise SalusCloudConnectionError(f"AWS IoT refused the connection: {failure}")
+        if self._lost.is_set():
+            raise SalusCloudConnectionError("AWS IoT closed the connection right after accepting it")
         self._connected.set()
         _LOGGER.debug("Connected to AWS IoT")
         if not self._push_denied and self._device_codes:
@@ -210,7 +214,7 @@ class SalusMqttConnection:
 
     async def _async_subscribe(self, client: Any) -> None:
         topics = [f"$aws/things/{code}/shadow/update/documents" for code in self._device_codes]
-        self._subscribing = True
+        self._subscribing_client = client
         self._subscriptions_sent = False
         self._expected_mids = set()
         self._subacks = {}
@@ -261,9 +265,9 @@ class SalusMqttConnection:
         if client is not self._client:
             return
         self._connected.clear()
-        if self._subscribing:
+        if self._subscribing_client is client:
             # AWS IoT closes the connection when the policy does not allow the subscription
-            self._subscribing = False
+            self._subscribing_client = None
             self._set_push_available(False)
         self._lost.set()
 
@@ -273,9 +277,13 @@ class SalusMqttConnection:
             self._evaluate_subscriptions()
 
     def _evaluate_subscriptions(self) -> None:
-        if not self._subscribing or not self._subscriptions_sent or not self._expected_mids <= self._subacks.keys():
+        if (
+            self._subscribing_client is None
+            or not self._subscriptions_sent
+            or not self._expected_mids <= self._subacks.keys()
+        ):
             return
-        self._subscribing = False
+        self._subscribing_client = None
         self._set_push_available(not any(self._subacks[mid] for mid in self._expected_mids))
 
     def _set_push_available(self, available: bool) -> None:
